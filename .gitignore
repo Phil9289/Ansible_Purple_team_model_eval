@@ -46,3 +46,8 @@ Thumbs.db
 # --- Éditeurs ---
 .vscode/
 .idea/
+
+# --- Archives (ex. lab-ansible.tar.gz, 4,6 Go avec le modèle) ---
+*.tar.gz
+*.tgz
+*.zip
