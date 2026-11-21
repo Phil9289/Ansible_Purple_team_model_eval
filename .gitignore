@@ -1,0 +1,48 @@
+# --- Secrets Ansible / Proxmox (ne jamais committer) ---
+.vault_pass
+.vault_pass*
+*vault_pass*
+*.vault-password
+vault-password*
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+*.p12
+*.pfx
+# Fichiers vault NON chiffrés (copies de travail)
+*vault*.yml.dec
+*vault*.decrypted*
+
+# --- Ansible ---
+*.retry
+.ansible/
+ansible.log
+fact_cache/
+collections/ansible_collections/
+
+# --- Modèles LLM et caches volumineux ---
+models-cache/
+*.gguf
+*.bin
+*.safetensors
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- Office / OneDrive / OS ---
+~$*
+*.tmp
+.~lock.*
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# --- Éditeurs ---
+.vscode/
+.idea/
