@@ -1,0 +1,9 @@
+# Géré par Ansible : ne pas modifier à la main.
+Port 22
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+UsePAM yes
+AllowUsers {{ ansible_svc_user }}
+Subsystem sftp /usr/lib/openssh/sftp-server

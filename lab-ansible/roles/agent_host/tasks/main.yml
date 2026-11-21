@@ -1,0 +1,65 @@
+---
+- name: Installer les outils offensifs et utilitaires Python
+  ansible.builtin.apt:
+    name: "{{ offensive_tools }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Créer les répertoires nécessaires pour llama et hermes
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ ansible_svc_user }}"
+    group: "{{ ansible_svc_user }}"
+    mode: "0755"
+  loop:
+    - "{{ llama_install_dir }}"
+    - "{{ llama_models_dir }}"
+    - /opt/hermes
+
+- name: Télécharger et extraire la version complète de llama.cpp (binaire + libs)
+  ansible.builtin.unarchive:
+    src: "{{ llama_release_url }}"
+    dest: "{{ llama_install_dir }}"
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
+    creates: "{{ llama_install_dir }}/llama-server"
+    owner: "{{ ansible_svc_user }}"
+    group: "{{ ansible_svc_user }}"
+
+- name: Télécharger le modèle intelligent Qwen 2.5 7B Instruct GGUF (4.36 Go)
+  ansible.builtin.get_url:
+    url: "{{ llm_model_url }}"
+    dest: "{{ llama_models_dir }}/{{ llm_model_name }}"
+    owner: "{{ ansible_svc_user }}"
+    group: "{{ ansible_svc_user }}"
+    mode: "0644"
+    timeout: 600
+    tmp_dest: "/var/tmp"
+
+- name: Déployer le service systemd pour llama-server
+  ansible.builtin.template:
+    src: llama-server.service.j2
+    dest: /etc/systemd/system/llama-server.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Recharger systemd
+    - Redémarrer llama-server
+
+- name: S'assurer que llama-server est démarré et actif au boot
+  ansible.builtin.systemd:
+    name: llama-server
+    state: started
+    enabled: true
+
+- name: Déployer le script autonome de l'agent Hermes
+  ansible.builtin.template:
+    src: hermes_agent.py.j2
+    dest: /opt/hermes/hermes_agent.py
+    owner: "{{ ansible_svc_user }}"
+    group: "{{ ansible_svc_user }}"
+    mode: "0755"

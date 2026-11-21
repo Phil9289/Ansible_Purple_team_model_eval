@@ -1,0 +1,105 @@
+---
+- name: Cloner chaque VM du lab depuis le template
+  community.proxmox.proxmox_kvm:
+    api_host: "{{ vault_proxmox_api_host }}"
+    validate_certs: false
+    api_user: "{{ vault_proxmox_api_user }}"
+    api_token_id: "{{ vault_proxmox_api_token_id }}"
+    api_token_secret: "{{ vault_proxmox_api_token_secret }}"
+    node: "{{ proxmox_node }}"
+    clone: "{{ lab_template_name }}"
+    newid: "{{ hostvars[item]['vmid'] }}"
+    name: "{{ item }}"
+    full: true
+    storage: "{{ lab_storage }}"
+    timeout: 300
+  loop: "{{ groups['lab'] }}"
+  no_log: true
+
+- name: Agrandir le disque système scsi0 si supérieur à 20 Go
+  community.proxmox.proxmox_disk:
+    api_host: "{{ vault_proxmox_api_host }}"
+    validate_certs: false
+    api_user: "{{ vault_proxmox_api_user }}"
+    api_token_id: "{{ vault_proxmox_api_token_id }}"
+    api_token_secret: "{{ vault_proxmox_api_token_secret }}"
+    vmid: "{{ hostvars[item]['vmid'] }}"
+    disk: scsi0
+    size: "{{ hostvars[item]['disk_gb'] }}G"
+    state: resized
+  loop: "{{ groups['lab'] }}"
+  when: hostvars[item]['disk_gb'] | int > 20
+  no_log: true
+
+- name: Lire l'état de chaque VM (une VM allumée ne doit pas être reconfigurée à chaud)
+  community.proxmox.proxmox_vm_info:
+    api_host: "{{ vault_proxmox_api_host }}"
+    validate_certs: false
+    api_user: "{{ vault_proxmox_api_user }}"
+    api_token_id: "{{ vault_proxmox_api_token_id }}"
+    api_token_secret: "{{ vault_proxmox_api_token_secret }}"
+    node: "{{ proxmox_node }}"
+    vmid: "{{ hostvars[item]['vmid'] }}"
+  loop: "{{ groups['lab'] }}"
+  register: vm_info
+  no_log: true
+
+- name: Repérer les VM déjà allumées
+  ansible.builtin.set_fact:
+    running_vms: "{{ vm_info.results | selectattr('proxmox_vms.0.status', 'equalto', 'running') | map(attribute='item') | list }}"
+
+- name: Configurer ressources, réseau vmbr3 et cloud-init (VM éteintes seulement)
+  community.proxmox.proxmox_kvm:
+    api_host: "{{ vault_proxmox_api_host }}"
+    validate_certs: false
+    api_user: "{{ vault_proxmox_api_user }}"
+    api_token_id: "{{ vault_proxmox_api_token_id }}"
+    api_token_secret: "{{ vault_proxmox_api_token_secret }}"
+    node: "{{ proxmox_node }}"
+    vmid: "{{ hostvars[item]['vmid'] }}"
+    name: "{{ item }}"
+    cores: "{{ hostvars[item]['vcpu'] }}"
+    memory: "{{ hostvars[item]['ram_mb'] }}"
+    net:
+      net0: "virtio,bridge={{ lab_bridge }},firewall=0"
+    ipconfig:
+      ipconfig0: "ip={{ hostvars[item]['ansible_host'] }}/24,gw={{ lab_gateway }}"
+    nameservers:
+      - "{{ lab_dns }}"
+    ciuser: "{{ ansible_svc_user }}"
+    sshkeys: "{{ lookup('file', lab_ssh_pubkey) }}"
+    update: true
+    update_unsafe: true
+  loop: "{{ groups['lab'] }}"
+  when: item not in running_vms
+  no_log: true
+
+- name: Attacher la P100 à la VM agent (VM éteinte seulement)
+  community.proxmox.proxmox_kvm:
+    api_host: "{{ vault_proxmox_api_host }}"
+    validate_certs: false
+    api_user: "{{ vault_proxmox_api_user }}"
+    api_token_id: "{{ vault_proxmox_api_token_id }}"
+    api_token_secret: "{{ vault_proxmox_api_token_secret }}"
+    node: "{{ proxmox_node }}"
+    vmid: "{{ hostvars[groups['attacker'][0]]['vmid'] }}"
+    hostpci:
+      hostpci0: "mapping={{ gpu_pci_mapping }},pcie=1"
+    update: true
+    update_unsafe: true
+  when: gpu_passthrough | bool and groups['attacker'][0] not in running_vms
+  no_log: true
+
+- name: Démarrer chaque VM du lab
+  community.proxmox.proxmox_kvm:
+    api_host: "{{ vault_proxmox_api_host }}"
+    validate_certs: false
+    api_user: "{{ vault_proxmox_api_user }}"
+    api_token_id: "{{ vault_proxmox_api_token_id }}"
+    api_token_secret: "{{ vault_proxmox_api_token_secret }}"
+    node: "{{ proxmox_node }}"
+    vmid: "{{ hostvars[item]['vmid'] }}"
+    state: started
+    timeout: 300
+  loop: "{{ groups['lab'] }}"
+  no_log: true

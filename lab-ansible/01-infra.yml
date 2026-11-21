@@ -1,0 +1,26 @@
+---
+- name: Préparer le réseau isolé et le pare-feu de l hôte
+  hosts: proxmox_host
+  become: true
+  roles:
+    - role: proxmox_network
+      tags: firewall
+
+- name: Créer les VM jetables par l API Proxmox
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: proxmox_vms
+      tags: vms
+
+- name: Attendre que chaque VM réponde en SSH
+  hosts: lab
+  gather_facts: false
+  tasks:
+    - name: Attendre la connexion SSH (cloud-init termine le premier démarrage)
+      ansible.builtin.wait_for_connection:
+        delay: 15
+        sleep: 5
+        timeout: 300
+      tags: vms

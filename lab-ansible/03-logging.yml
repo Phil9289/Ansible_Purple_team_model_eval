@@ -1,0 +1,7 @@
+---
+- name: Déployer le serveur de journalisation
+  hosts: logs
+  become: true
+  roles:
+    - common
+    - log_server

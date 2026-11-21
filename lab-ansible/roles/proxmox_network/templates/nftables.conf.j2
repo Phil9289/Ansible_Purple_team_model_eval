@@ -1,0 +1,88 @@
+#!/usr/sbin/nft -f
+# Généré par Ansible — ne pas modifier à la main.
+# Jamais de "flush ruleset" : on détruit puis recrée SEULEMENT les tables du lab.
+table inet lab_filter
+destroy table inet lab_filter
+table ip lab_nat
+destroy table ip lab_nat
+table bridge lab_l2
+destroy table bridge lab_l2
+
+{% set logging_ip = hostvars[groups["logs"][0]]["ansible_host"] %}
+
+# ---------------------------------------------------------------
+# 1. Ce qui sort du lab (vers l hôte, le LAN, Internet) et ce qui y entre
+# ---------------------------------------------------------------
+table inet lab_filter {
+    chain input {
+        type filter hook input priority 0; policy accept;
+        iifname != "{{ lab_bridge }}" accept
+        ct state established,related accept
+        iifname "{{ lab_bridge }}" limit rate 10/minute log prefix "LAB-REJECT-IN "
+        iifname "{{ lab_bridge }}" reject
+    }
+
+    chain forward {
+        type filter hook forward priority 0; policy accept;
+        ct state established,related accept
+
+        # Trafic entre VM du lab (filtré en couche 2 par bridge lab_l2)
+        iifname "{{ lab_bridge }}" oifname "{{ lab_bridge }}" accept
+
+        # Entrée dans le lab : seulement le SSH du nœud de contrôle (LXC 300)
+        oifname "{{ lab_bridge }}" ip saddr {{ control_node_ip }} tcp dport 22 accept
+        oifname "{{ lab_bridge }}" limit rate 10/minute log prefix "LAB-REJECT-ENTREE "
+        oifname "{{ lab_bridge }}" reject
+
+        # Tout le trafic qui ne concerne pas le lab : on n y touche pas
+        iifname != "{{ lab_bridge }}" accept
+
+{% if lab_mode == "provisioning" %}
+        # Mode provisioning : Internet autorisé (IPv4), réseaux privés toujours rejetés
+        iifname "{{ lab_bridge }}" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } limit rate 10/minute log prefix "LAB-REJECT-RFC1918 "
+        iifname "{{ lab_bridge }}" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } reject
+        iifname "{{ lab_bridge }}" meta nfproto ipv4 accept
+{% endif %}
+
+        # Refus final : tout le reste qui sort du lab (IPv6 compris)
+        iifname "{{ lab_bridge }}" limit rate 10/minute log prefix "LAB-REJECT-SORTIE "
+        iifname "{{ lab_bridge }}" reject
+    }
+}
+
+# ---------------------------------------------------------------
+# 2. NAT vers Internet — actif uniquement en mode provisioning
+# ---------------------------------------------------------------
+table ip lab_nat {
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+{% if lab_mode == "provisioning" %}
+        ip saddr {{ lab_network }} oifname != "{{ lab_bridge }}" masquerade
+{% endif %}
+    }
+}
+
+# ---------------------------------------------------------------
+# 3. Trafic ENTRE les VM, sur le bridge (couche 2)
+# ---------------------------------------------------------------
+table bridge lab_l2 {
+    chain forward {
+        type filter hook forward priority 0; policy accept;
+
+        # Ne rien filtrer en dehors du bridge du lab (vmbr0, Security Onion, Ludus...)
+        meta ibrname != "{{ lab_bridge }}" accept
+
+{% for host in groups["lab"] %}
+        # {{ host }} (VMID {{ hostvars[host]["vmid"] }}) : anti-usurpation IP et ARP
+        iifname "tap{{ hostvars[host]["vmid"] }}i0" ether type ip ip saddr != {{ hostvars[host]["ansible_host"] }} limit rate 10/minute log prefix "LAB-SPOOF "
+        iifname "tap{{ hostvars[host]["vmid"] }}i0" ether type ip ip saddr != {{ hostvars[host]["ansible_host"] }} drop
+        iifname "tap{{ hostvars[host]["vmid"] }}i0" ether type arp arp saddr ip != {{ hostvars[host]["ansible_host"] }} drop
+{% endfor %}
+
+        # Le serveur de journaux n accepte que syslog TCP/514 depuis les autres VM du bridge
+        ip daddr {{ logging_ip }} tcp dport 514 accept
+        ether type ip ip daddr {{ logging_ip }} ct state established,related accept
+        ip daddr {{ logging_ip }} limit rate 10/minute log prefix "LAB-REJECT-LOGS "
+        ip daddr {{ logging_ip }} drop
+    }
+}

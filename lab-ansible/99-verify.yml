@@ -1,0 +1,65 @@
+---
+- name: Validation et Preuve de Sécurité de l'Isolation du Lab Purple Team
+  hosts: attacker
+  gather_facts: false
+  tasks:
+    # --- Tests Positifs (Flux autorisés indispensables au fonctionnement) ---
+    - name: "[POSITIF] 1. Vérifier l'accès HTTP à la cible vulnérable (10.30.0.20:8080)"
+      ansible.builtin.uri:
+        url: "http://10.30.0.20:8080/"
+        method: GET
+        status_code: 200
+        timeout: 5
+      register: test_web
+
+    - name: "[POSITIF] 2. Vérifier la connectivité Syslog TCP/514 vers le serveur de logs (10.30.0.30)"
+      ansible.builtin.command:
+        cmd: "nc -z -w 3 10.30.0.30 514"
+      register: test_logs
+
+    - name: "[POSITIF] 3. Vérifier la santé du moteur d'inférence LLM local (127.0.0.1:8081)"
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:8081/health"
+        method: GET
+        status_code: 200
+        timeout: 5
+      register: test_llm
+
+    # --- Tests Négatifs (Flux interdits qui DOIVENT échouer en mode isolé) ---
+    - name: "[NÉGATIF] 4. Tester l'accès à Internet (1.1.1.1) — DOIT ÊTRE REJETÉ"
+      ansible.builtin.command:
+        cmd: "curl -s -m 3 http://1.1.1.1"
+      register: test_internet
+      ignore_errors: true
+
+    - name: "[NÉGATIF] 5. Tester l'accès au réseau local domestique (192.168.1.1) — DOIT ÊTRE REJETÉ"
+      ansible.builtin.command:
+        cmd: "curl -s -m 3 http://192.168.1.1"
+      register: test_lan
+      ignore_errors: true
+
+    - name: "[NÉGATIF] 6. Tester l'accès à l'interface d'administration Proxmox (:8006) — DOIT ÊTRE REJETÉ"
+      ansible.builtin.command:
+        cmd: "curl -k -s -m 3 https://192.168.1.116:8006"
+      register: test_pve
+      ignore_errors: true
+
+    - name: "[NÉGATIF] 7. Tester une connexion SSH clandestine vers le serveur de logs (10.30.0.30:22) — DOIT ÊTRE BLOQUÉE"
+      ansible.builtin.command:
+        cmd: "nc -z -w 3 10.30.0.30 22"
+      register: test_ssh_logs
+      ignore_errors: true
+
+    # --- Assertion Finale et Preuve Académique ---
+    - name: "Vérifier la conformité stricte de l'isolation du laboratoire"
+      ansible.builtin.assert:
+        that:
+          - test_web.status == 200
+          - test_logs.rc == 0
+          - test_llm.status == 200
+          - test_internet.rc != 0
+          - test_lan.rc != 0
+          - test_pve.rc != 0
+          - test_ssh_logs.rc != 0
+        success_msg: "SUCCÈS TOTAL : Tous les flux autorisés sont opérationnels et tous les flux interdits sont strictement bloqués par nftables !"
+        fail_msg: "ALERTE SÉCURITÉ : Un flux interdit n'a pas été rejeté comme prévu."

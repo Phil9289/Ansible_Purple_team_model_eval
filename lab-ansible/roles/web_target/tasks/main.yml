@@ -1,0 +1,26 @@
+---
+- name: Installer nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Déployer le site volontairement mal configuré (listage de répertoire activé)
+  ansible.builtin.template:
+    src: nginx-site.conf.j2
+    dest: /etc/nginx/sites-available/default
+    mode: "0644"
+  notify: redémarrer nginx
+
+- name: Déposer un fichier fictif visible dans le listage
+  ansible.builtin.copy:
+    content: "Fichier de test de la cible du lab (contenu fictif).\n"
+    dest: /var/www/html/notes-internes.txt
+    mode: "0644"
+
+- name: S'assurer que nginx est actif au démarrage
+  ansible.builtin.systemd:
+    name: nginx
+    state: started
+    enabled: true

@@ -1,0 +1,45 @@
+---
+- name: Vérifier que /etc/network/interfaces charge bien interfaces.d
+  ansible.builtin.command: grep -Eq "^source /etc/network/interfaces.d/\*" /etc/network/interfaces
+  changed_when: false
+
+- name: Créer le fichier d interface dédié au bridge du lab (vmbr3)
+  ansible.builtin.template:
+    src: vmbr3-lab.j2
+    dest: /etc/network/interfaces.d/vmbr3-lab
+    mode: "0644"
+  notify: activer le bridge du lab
+
+- name: Activer le routage IPv4 (nécessaire pour le NAT et le SSH du contrôle)
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_file: /etc/sysctl.d/90-lab.conf
+    state: present
+
+- name: Créer le dossier des règles nftables du lab
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    mode: "0755"
+
+- name: Déployer et valider les tables nftables du lab
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.d/lab.conf
+    mode: "0644"
+    validate: "/usr/sbin/nft -c -f %s"
+  notify: recharger nftables
+
+- name: Déployer l unité systemd qui recharge les règles au démarrage de l hôte
+  ansible.builtin.template:
+    src: lab-nftables.service.j2
+    dest: /etc/systemd/system/lab-nftables.service
+    mode: "0644"
+  notify: recharger nftables
+
+- name: Activer l unité de persistance lab-nftables.service
+  ansible.builtin.systemd:
+    name: lab-nftables.service
+    enabled: true
+    daemon_reload: true

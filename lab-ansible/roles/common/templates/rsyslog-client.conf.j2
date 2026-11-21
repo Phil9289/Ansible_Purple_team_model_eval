@@ -1,0 +1,2 @@
+# Géré par Ansible : envoie tous les journaux au serveur de journaux du lab (TCP).
+*.* @@{{ hostvars[groups['logs'][0]]['ansible_host'] }}:514

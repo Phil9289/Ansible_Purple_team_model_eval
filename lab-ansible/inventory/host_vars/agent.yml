@@ -1,0 +1,4 @@
+vmid: 301
+vcpu: 8
+ram_mb: 32768
+disk_gb: 80

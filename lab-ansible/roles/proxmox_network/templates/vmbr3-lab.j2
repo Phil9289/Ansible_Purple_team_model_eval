@@ -1,0 +1,6 @@
+auto {{ lab_bridge }}
+iface {{ lab_bridge }} inet static
+    address {{ lab_gateway }}/24
+    bridge-ports none
+    bridge-stp off
+    bridge-fd 0

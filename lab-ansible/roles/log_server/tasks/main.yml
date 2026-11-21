@@ -1,0 +1,21 @@
+---
+- name: Créer le dossier des journaux du lab
+  ansible.builtin.file:
+    path: /var/log/lab
+    state: directory
+    owner: root
+    group: adm
+    mode: "0750"
+
+- name: Déployer la configuration serveur rsyslog
+  ansible.builtin.template:
+    src: rsyslog-server.conf.j2
+    dest: /etc/rsyslog.d/10-server.conf
+    mode: "0644"
+  notify: redémarrer rsyslog serveur
+
+- name: S'assurer que rsyslog est actif au démarrage
+  ansible.builtin.systemd:
+    name: rsyslog
+    state: started
+    enabled: true

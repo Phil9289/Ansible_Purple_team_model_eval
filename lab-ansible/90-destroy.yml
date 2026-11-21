@@ -1,0 +1,58 @@
+---
+- name: Exporter les journaux avant destruction
+  hosts: logs
+  become: true
+  ignore_unreachable: true
+  tasks:
+    - name: Copier le fichier de journal de chaque VM vers le nœud de contrôle
+      ansible.builtin.fetch:
+        src: "/var/log/lab/{{ hostvars[item]['ansible_host'] }}.log"
+        dest: "./exports/{{ ansible_date_time.date | default('latest') }}/{{ item }}.log"
+        flat: true
+        fail_on_missing: false
+      loop: "{{ groups['lab'] }}"
+      ignore_errors: true
+
+- name: Détruire les VM choisies
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    to_destroy: "{{ vms_to_destroy | default(groups['lab']) }}"
+  tasks:
+    - name: Arrêter chaque VM avant suppression
+      community.proxmox.proxmox_kvm:
+        api_host: "{{ vault_proxmox_api_host }}"
+        validate_certs: false
+        api_user: "{{ vault_proxmox_api_user }}"
+        api_token_id: "{{ vault_proxmox_api_token_id }}"
+        api_token_secret: "{{ vault_proxmox_api_token_secret }}"
+        node: "{{ proxmox_node }}"
+        vmid: "{{ hostvars[item]['vmid'] }}"
+        state: stopped
+        force: true
+        timeout: 120
+      loop: "{{ to_destroy }}"
+      ignore_errors: true
+      no_log: true
+
+    - name: Supprimer chaque VM
+      community.proxmox.proxmox_kvm:
+        api_host: "{{ vault_proxmox_api_host }}"
+        validate_certs: false
+        api_user: "{{ vault_proxmox_api_user }}"
+        api_token_id: "{{ vault_proxmox_api_token_id }}"
+        api_token_secret: "{{ vault_proxmox_api_token_secret }}"
+        node: "{{ proxmox_node }}"
+        vmid: "{{ hostvars[item]['vmid'] }}"
+        state: absent
+        force: true
+        timeout: 120
+      loop: "{{ to_destroy }}"
+      no_log: true
+
+    - name: Oublier l ancienne clé d hôte SSH de chaque VM détruite
+      ansible.builtin.known_hosts:
+        name: "{{ hostvars[item]['ansible_host'] }}"
+        state: absent
+      loop: "{{ to_destroy }}"

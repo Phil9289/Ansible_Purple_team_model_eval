@@ -1,0 +1,6 @@
+---
+- name: Appliquer la configuration commune (utilisateur, sudo, SSH, client rsyslog)
+  hosts: lab
+  become: true
+  roles:
+    - common

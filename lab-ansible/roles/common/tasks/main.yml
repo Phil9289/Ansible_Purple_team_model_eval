@@ -1,0 +1,50 @@
+---
+- name: Installer rsyslog et sudo (absents de l'image Debian minimale)
+  ansible.builtin.apt:
+    name:
+      - rsyslog
+      - sudo
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Confirmer l'utilisateur de service (déjà créé par cloud-init)
+  ansible.builtin.user:
+    name: "{{ ansible_svc_user }}"
+    groups: sudo
+    append: true
+    shell: /bin/bash
+
+- name: Installer la clé publique du nœud de contrôle
+  ansible.posix.authorized_key:
+    user: "{{ ansible_svc_user }}"
+    key: "{{ lookup('file', lab_ssh_pubkey) }}"
+
+- name: Donner sudo sans mot de passe à l'utilisateur de service
+  ansible.builtin.copy:
+    content: "{{ ansible_svc_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    dest: "/etc/sudoers.d/{{ ansible_svc_user }}"
+    mode: "0440"
+    validate: "visudo -cf %s"
+
+- name: Déployer la configuration sshd durcie
+  ansible.builtin.template:
+    src: sshd_config.j2
+    dest: /etc/ssh/sshd_config
+    mode: "0644"
+    validate: "/usr/sbin/sshd -t -f %s"
+  notify: redémarrer ssh
+
+- name: Déployer la configuration client rsyslog (pas sur le serveur de journaux)
+  ansible.builtin.template:
+    src: rsyslog-client.conf.j2
+    dest: /etc/rsyslog.d/60-lab.conf
+    mode: "0644"
+  when: inventory_hostname not in groups['logs']
+  notify: redémarrer rsyslog
+
+- name: S'assurer que rsyslog est actif au démarrage
+  ansible.builtin.systemd:
+    name: rsyslog
+    state: started
+    enabled: true

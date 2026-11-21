@@ -1,0 +1,17 @@
+[Unit]
+Description=Llama.cpp OpenAI Compatible Server
+After=network.target
+
+[Service]
+Type=simple
+User={{ ansible_svc_user }}
+Group={{ ansible_svc_user }}
+WorkingDirectory={{ llama_install_dir }}
+ExecStart={{ llama_install_dir }}/llama-server -m {{ llama_models_dir }}/{{ llm_model_name }} -c {{ llama_ctx_size }} -t {{ llama_threads }} --host 127.0.0.1 --port {{ llama_port }}
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,8 @@
+---
+# Déploiement global de l'infrastructure et de tous les rôles du laboratoire
+
+- import_playbook: 01-infra.yml
+- import_playbook: 02-base.yml
+- import_playbook: 03-logging.yml
+- import_playbook: 04-target.yml
+- import_playbook: 05-agent.yml

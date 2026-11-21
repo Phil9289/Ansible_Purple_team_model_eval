@@ -1,0 +1,7 @@
+---
+- name: Déployer l'environnement de l'agent LLM et outils offensifs
+  hosts: attacker
+  become: true
+  roles:
+    - common
+    - agent_host

@@ -1,0 +1,7 @@
+---
+llama_install_dir: "{{ llama_install_dir | default('/opt/llama') }}"
+llama_models_dir: "{{ llama_models_dir | default('/opt/models') }}"
+llm_model_name: "{{ llm_model_name | default('Qwen2.5-7B-Instruct-Q4_K_M.gguf') }}"
+llama_port: "{{ llama_port | default(8081) }}"
+llama_ctx_size: "{{ llama_ctx_size | default(4096) }}"
+llama_threads: "{{ llama_threads | default(4) }}"

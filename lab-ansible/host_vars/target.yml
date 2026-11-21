@@ -1,0 +1,5 @@
+vmid: 302
+vcpu: 2
+ram_mb: 2048
+disk_gb: 20
+nginx_listen_port: 8080

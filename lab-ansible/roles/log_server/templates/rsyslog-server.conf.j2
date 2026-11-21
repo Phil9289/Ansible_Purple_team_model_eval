@@ -1,0 +1,14 @@
+# Géré par Ansible.
+module(load="imtcp")
+
+# Un fichier par IP SOURCE RÉELLE de la connexion (%FROMHOST-IP%), pas par nom
+# d'hôte déclaré : une VM compromise ne peut pas écrire dans le fichier d'une autre.
+template(name="ParIP" type="string" string="/var/log/lab/%FROMHOST-IP%.log")
+
+# Les messages reçus du réseau ont leur propre ruleset : ils ne se mélangent
+# pas aux journaux locaux et ne sont jamais renvoyés ailleurs.
+ruleset(name="distant") {
+    action(type="omfile" dynaFile="ParIP")
+}
+
+input(type="imtcp" port="514" ruleset="distant")

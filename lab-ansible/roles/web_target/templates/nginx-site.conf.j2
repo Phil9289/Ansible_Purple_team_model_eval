@@ -1,0 +1,8 @@
+# Géré par Ansible : cible volontairement exposée.
+server {
+    listen {{ nginx_listen_port }} default_server;
+    server_name target.lab;
+    root /var/www/html;
+    index index.html;
+    autoindex on;
+}

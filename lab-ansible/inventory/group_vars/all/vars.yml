@@ -1,0 +1,28 @@
+# --- Réseau du lab ---
+lab_network: "10.30.0.0/24"
+lab_bridge: "vmbr3"
+lab_gateway: "10.30.0.1"
+lab_dns: "1.1.1.1"
+lab_mode: "provisioning"
+control_node_ip: "192.168.1.161"
+lab_lan_probe_ip: "192.168.1.1"
+
+# --- Proxmox ---
+proxmox_node: "pve"
+lab_template_name: "debian13-cloudinit-tpl"
+lab_template_vmid: 9000
+lab_storage: "nvme-vms"
+gpu_passthrough: false
+gpu_pci_mapping: "p100"
+
+# --- Accès Ansible aux VM ---
+ansible_svc_user: "ansible"
+lab_ssh_pubkey: "/root/.ssh/id_ed25519.pub"
+
+# --- Modèle LLM & Outils ---
+llm_model_url: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+llama_port: 8081
+offensive_tools:
+  - nmap
+  - netcat-openbsd
+  - curl

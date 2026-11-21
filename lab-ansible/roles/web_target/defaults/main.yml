@@ -1,0 +1,3 @@
+---
+# Valeur par défaut : la plus faible précédence. host_vars/target.yml la remplace par 8080.
+nginx_listen_port: 80

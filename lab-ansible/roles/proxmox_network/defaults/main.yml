@@ -1,0 +1,5 @@
+---
+lab_network: "10.30.0.0/24"
+lab_bridge: "vmbr3"
+lab_gateway: "10.30.0.1"
+lab_mode: "provisioning"
