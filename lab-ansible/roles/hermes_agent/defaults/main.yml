@@ -13,10 +13,13 @@ hermes_agent_approval_timeout: 300
 # Outils permis en mode CLI. Pas de web / browser / vision / image_gen / tts :
 # inutiles (le lab n'a pas Internet) ou dépendants d'API externes.
 hermes_agent_toolsets: [terminal, file, todo, memory, skills]
-# Motifs toujours refusés, même si l'agent insiste (fnmatch)
-hermes_agent_deny_patterns:
-  - "sudo *"
-  - "su *"
-  - "nft *"
-  - "ssh *"
+# Commandes que hermes peut lancer en root par sudo (sans mot de passe).
+# Vide = aucun sudo. Chaque commande reste soumise à l'approbation manuelle.
+hermes_agent_sudo_commands: []
+# Motifs toujours refusés, même si l'agent insiste (fnmatch).
+# Si du sudo est permis, seul « sudo ... --script » est bloqué :
+# nmap peut exécuter des scripts NSE, ce qui donnerait un shell root.
+hermes_agent_deny_patterns: >-
+  {{ (['sudo *--script*'] if hermes_agent_sudo_commands | length > 0 else ['sudo *'])
+     + ['su *', 'nft *', 'ssh *'] }}
 hermes_agent_env: {}
