@@ -3,3 +3,6 @@ lab_network: "10.30.0.0/24"
 lab_bridge: "vmbr3"
 lab_gateway: "10.30.0.1"
 lab_mode: "provisioning"
+# Ports permis vers Internet en mode provisioning seulement (DNS, HTTP, HTTPS).
+# Les réseaux privés sont rejetés avant : le LAN de la maison reste fermé.
+lab_provisioning_ports: [53, 80, 443]
