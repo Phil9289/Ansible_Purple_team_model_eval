@@ -166,7 +166,7 @@ cat > roles/agent_host/tasks/gpu.yml << 'EOF'
     types: [deb]
     uris: [http://deb.debian.org/debian]
     suites: ["{{ ansible_distribution_release }}", "{{ ansible_distribution_release }}-updates"]
-    components: [non-free, non-free-firmware]
+    components: [contrib, non-free, non-free-firmware]
     signed_by: /usr/share/keyrings/debian-archive-keyring.gpg
 
 - name: Installer le pilote NVIDIA, Vulkan et les en-têtes du noyau
