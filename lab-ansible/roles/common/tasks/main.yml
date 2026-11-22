@@ -1,4 +1,13 @@
 ---
+# Premier démarrage d'une VM clonée : cloud-init lance son propre apt-get en
+# arrière-plan. Sans cette attente, notre apt trouve le verrou dpkg pris ou une
+# liste de paquets à moitié écrite (« No package matching 'rsyslog' »).
+- name: Attendre la fin de cloud-init (premier démarrage)
+  ansible.builtin.command: cloud-init status --wait
+  register: cloud_init_status
+  changed_when: false
+  failed_when: cloud_init_status.rc not in [0, 2]   # 2 = terminé avec avertissements
+
 - name: Installer rsyslog et sudo (absents de l'image Debian minimale)
   ansible.builtin.apt:
     name:
