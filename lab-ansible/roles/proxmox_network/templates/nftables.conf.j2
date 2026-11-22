@@ -38,9 +38,11 @@ table inet lab_filter {
         iifname != "{{ lab_bridge }}" accept
 
 {% if lab_mode == "provisioning" %}
-        # Mode provisioning : Internet autorisé (IPv4), réseaux privés toujours rejetés
+        # Mode provisioning : réseaux privés toujours rejetés EN PREMIER
         iifname "{{ lab_bridge }}" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } limit rate 10/minute log prefix "LAB-REJECT-RFC1918 "
         iifname "{{ lab_bridge }}" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } reject
+        # Puis seulement DNS, HTTP et HTTPS vers Internet (apt, installateurs, modèles)
+        iifname "{{ lab_bridge }}" ip saddr {{ lab_network }} meta l4proto { tcp, udp } th dport { {{ lab_provisioning_ports | join(', ') }} } accept
 {% endif %}
 
         # Refus final : tout le reste qui sort du lab (IPv6 compris)
