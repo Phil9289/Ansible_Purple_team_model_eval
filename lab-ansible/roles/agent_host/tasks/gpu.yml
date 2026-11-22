@@ -13,6 +13,10 @@
   ansible.builtin.apt:
     name:
       - "linux-headers-{{ ansible_facts['kernel'] }}"
+      # En-têtes du DERNIER noyau aussi : au premier démarrage, cloud-init peut
+      # installer un noyau plus récent ; sans ses en-têtes, DKMS ne compile pas
+      # le module nvidia pour lui et nvidia-smi échoue après le redémarrage.
+      - linux-headers-amd64
       - nvidia-driver
       - nvidia-kernel-dkms
       - nvidia-smi
