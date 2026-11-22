@@ -6,3 +6,4 @@
 - import_playbook: 03-logging.yml
 - import_playbook: 04-target.yml
 - import_playbook: 05-agent.yml
+- import_playbook: 06-acces-ssh.yml

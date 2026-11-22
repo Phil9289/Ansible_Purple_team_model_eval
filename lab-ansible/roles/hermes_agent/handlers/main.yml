@@ -1,0 +1,20 @@
+---
+- name: Vérifier Hermes Agent
+  ansible.builtin.shell:
+    cmd: >-
+      {{ hermes_agent_home }}/.local/bin/hermes doctor
+      > {{ hermes_agent_home }}/.hermes/logs/doctor-ansible.log 2>&1 < /dev/null;
+      cat {{ hermes_agent_home }}/.hermes/logs/doctor-ansible.log
+    chdir: "{{ hermes_agent_home }}"
+  become: true
+  become_user: "{{ hermes_agent_user }}"
+  environment:
+    HOME: "{{ hermes_agent_home }}"
+  register: hermes_doctor
+  changed_when: false
+  failed_when: false
+
+- name: Afficher le diagnostic de Hermes Agent
+  ansible.builtin.debug:
+    var: hermes_doctor.stdout_lines
+  listen: Vérifier Hermes Agent

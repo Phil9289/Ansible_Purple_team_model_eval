@@ -1,0 +1,14 @@
+# Alias SSH vers les VM du lab, générés depuis inventory/hosts.yml.
+# Les VM sont jetables (90-destroy) : leur clé d'hôte change à chaque rebuild,
+# on ne l'enregistre donc pas (sinon "REMOTE HOST IDENTIFICATION HAS CHANGED").
+{% for h in groups['lab'] %}
+Host {{ h }}
+    HostName {{ hostvars[h]['ansible_host'] }}
+    User {{ ansible_svc_user }}
+    IdentityFile {{ ssh_lab_identity }}
+    IdentitiesOnly yes
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LogLevel ERROR
+
+{% endfor %}

@@ -41,7 +41,6 @@ table inet lab_filter {
         # Mode provisioning : Internet autorisé (IPv4), réseaux privés toujours rejetés
         iifname "{{ lab_bridge }}" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } limit rate 10/minute log prefix "LAB-REJECT-RFC1918 "
         iifname "{{ lab_bridge }}" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } reject
-        iifname "{{ lab_bridge }}" meta nfproto ipv4 accept
 {% endif %}
 
         # Refus final : tout le reste qui sort du lab (IPv6 compris)

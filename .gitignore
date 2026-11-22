@@ -55,3 +55,7 @@ Thumbs.db
 # --- Copies de sauvegarde ---
 *.bak
 *.bak[0-9]
+
+# --- Labo ---
+exports/
+*.avant-*

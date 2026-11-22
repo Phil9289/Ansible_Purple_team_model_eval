@@ -1,0 +1,134 @@
+---
+# Hermes Agent (Nous Research) : agent LLM avec outils (terminal, fichiers...)
+# branché sur le llama-server local. Tourne sous un utilisateur SANS privilèges.
+
+# agent_host a peut-être changé le service llama-server (contexte 64k, --jinja) :
+# on applique son redémarrage MAINTENANT, avant de tester Hermes contre lui.
+- name: Appliquer les handlers en attente (redémarrage de llama-server)
+  ansible.builtin.meta: flush_handlers
+
+- name: Vérifier que le contexte de llama-server suffit à Hermes Agent (≥ 64 000)
+  ansible.builtin.assert:
+    that:
+      - hermes_agent_context | int >= 64000
+      - llama_ctx_size | int >= hermes_agent_context | int
+    fail_msg: >-
+      Hermes Agent exige au moins 64 000 tokens de contexte. llama_ctx_size={{ llama_ctx_size }},
+      hermes_agent_context={{ hermes_agent_context }}.
+
+- name: Installer les prérequis de l'installateur (git, curl, tar, libatomic pour Node.js)
+  ansible.builtin.apt:
+    name: [git, curl, tar, xz-utils, ca-certificates, libatomic1]
+    state: present
+
+- name: Créer l'utilisateur dédié hermes (aucun groupe sudo)
+  ansible.builtin.user:
+    name: "{{ hermes_agent_user }}"
+    home: "{{ hermes_agent_home }}"
+    shell: /bin/bash
+    groups: ""
+    append: false
+    create_home: true
+
+- name: S'assurer qu'aucune règle sudoers ne vise hermes
+  ansible.builtin.file:
+    path: "/etc/sudoers.d/{{ hermes_agent_user }}"
+    state: absent
+
+- name: Vérifier si Hermes Agent est déjà installé
+  ansible.builtin.stat:
+    path: "{{ hermes_agent_home }}/.local/bin/hermes"
+  register: hermes_bin
+
+- name: Télécharger l'installateur officiel (première installation, Internet requis)
+  ansible.builtin.get_url:
+    url: "{{ hermes_agent_install_url }}"
+    dest: "{{ hermes_agent_home }}/install-hermes.sh"
+    owner: "{{ hermes_agent_user }}"
+    group: "{{ hermes_agent_user }}"
+    mode: "0700"
+  when: not hermes_bin.stat.exists
+
+- name: Installer Hermes Agent en tant que hermes (peut prendre plusieurs minutes)
+  ansible.builtin.command:
+    cmd: "bash {{ hermes_agent_home }}/install-hermes.sh {{ hermes_agent_install_flags }}"
+    chdir: "{{ hermes_agent_home }}"
+    creates: "{{ hermes_agent_home }}/.local/bin/hermes"
+  become: true
+  become_user: "{{ hermes_agent_user }}"
+  environment:
+    HOME: "{{ hermes_agent_home }}"
+  when: not hermes_bin.stat.exists
+
+- name: Lire la version de schéma de config fournie avec Hermes
+  ansible.builtin.command:
+    cmd: grep -m1 '^_config_version:' {{ hermes_agent_home }}/.hermes/hermes-agent/cli-config.yaml.example
+  register: hermes_config_version
+  changed_when: false
+  failed_when: false
+
+- name: Générer ~/.hermes/config.yaml (modèle local, approbations, outils)
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ hermes_agent_home }}/.hermes/config.yaml"
+    owner: "{{ hermes_agent_user }}"
+    group: "{{ hermes_agent_user }}"
+    mode: "0600"
+  notify: Vérifier Hermes Agent
+
+- name: Générer ~/.hermes/.env (secrets, vide car aucune clé API externe)
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ hermes_agent_home }}/.hermes/.env"
+    owner: "{{ hermes_agent_user }}"
+    group: "{{ hermes_agent_user }}"
+    mode: "0600"
+  notify: Vérifier Hermes Agent
+
+- name: Vérifier que llama-server expose un gabarit de chat (option --jinja)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ llama_port }}/props"
+    return_content: true
+  register: llama_props
+  failed_when: >-
+    llama_props.status != 200
+    or (llama_props.json.chat_template | default('')) == ''
+    or (llama_props.json.default_generation_settings.n_ctx | default(hermes_agent_context) | int) < hermes_agent_context | int
+  retries: 20
+  delay: 6
+  until: llama_props.status == 200
+
+- name: Afficher la version de Hermes Agent
+  ansible.builtin.command:
+    cmd: "{{ hermes_agent_home }}/.local/bin/hermes --version"
+  become: true
+  become_user: "{{ hermes_agent_user }}"
+  environment:
+    HOME: "{{ hermes_agent_home }}"
+  register: hermes_version
+  changed_when: false
+
+- name: Test de bout en bout — Hermes Agent répond via le LLM local
+  # Sortie dans un fichier : la passerelle lancée par Hermes ne retient plus Ansible
+  ansible.builtin.shell:
+    cmd: >-
+      {{ hermes_agent_home }}/.local/bin/hermes -z 'Reply exactly HERMES_OK'
+      > {{ hermes_agent_home }}/.hermes/logs/test-ansible.log 2>&1 < /dev/null;
+      cat {{ hermes_agent_home }}/.hermes/logs/test-ansible.log
+    chdir: "{{ hermes_agent_home }}"
+  become: true
+  become_user: "{{ hermes_agent_user }}"
+  environment:
+    HOME: "{{ hermes_agent_home }}"
+  register: hermes_ping
+  changed_when: false
+  failed_when: "'HERMES_OK' not in hermes_ping.stdout"
+  timeout: 1200   # premier prompt long : Vulkan traite ~20 tokens/s sur la P100
+
+- name: Résumé
+  ansible.builtin.debug:
+    msg:
+      - "Hermes Agent : {{ hermes_version.stdout | default('?') }}"
+      - "Modèle : {{ hermes_agent_model }} via {{ hermes_agent_base_url }} ({{ hermes_agent_context }} tokens)"
+      - "Approbations : {{ hermes_agent_approvals }} — outils : {{ hermes_agent_toolsets | join(', ') }}"
+      - "Lancer : ssh agent  puis  sudo -iu {{ hermes_agent_user }} hermes"

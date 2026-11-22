@@ -1,0 +1,17 @@
+#!/bin/sh
+# {{ ansible_managed }}
+# Hookscript de la VM agent : partage de la Tesla P100 avec les conteneurs.
+dev={{ gpu_pci_address }}
+case "$2" in
+  pre-start)
+    if command -v nvidia-smi >/dev/null 2>&1 && \
+       nvidia-smi --query-compute-apps=gpu_bus_id --format=csv,noheader 2>/dev/null | grep -qi "${dev#0000:}"; then
+        echo "P100 utilisée par un conteneur : éteins-le (240, 242, 245) avant de démarrer la VM $1."
+        exit 1
+    fi ;;
+  post-stop)
+    [ -e /sys/bus/pci/drivers/vfio-pci/$dev ] && echo $dev > /sys/bus/pci/drivers/vfio-pci/unbind
+    [ -e /sys/bus/pci/drivers/nvidia/$dev ] || echo $dev > /sys/bus/pci/drivers/nvidia/bind
+    echo "P100 rendue au pilote nvidia." ;;
+esac
+exit 0

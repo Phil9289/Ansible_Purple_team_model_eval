@@ -5,3 +5,4 @@
   roles:
     - common
     - agent_host
+    - hermes_agent

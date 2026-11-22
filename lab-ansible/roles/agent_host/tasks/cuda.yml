@@ -1,0 +1,116 @@
+---
+# Compilation de llama.cpp avec CUDA (llama_backend: cuda).
+# Nécessite Internet (apt + github.com) la PREMIÈRE fois seulement :
+# ensuite tout est sauté grâce aux « creates: » (idempotence).
+
+- name: Regarder si le build CUDA est déjà installé
+  ansible.builtin.stat:
+    path: "{{ llama_install_dir }}/llama-server"
+  register: llama_cuda_bin
+
+- name: Vérifier l'espace disque libre (CUDA toolkit + compilation ≈ 8 Go)
+  ansible.builtin.assert:
+    that: >-
+      (ansible_facts['mounts'] | selectattr('mount', 'equalto', '/') | first).size_available
+      > 10 * 1024 * 1024 * 1024
+    fail_msg: "Moins de 10 Go libres sur / : agrandir le disque de la VM agent avant de compiler."
+  when: not llama_cuda_bin.stat.exists
+
+- name: Installer le CUDA toolkit et les outils de compilation
+  ansible.builtin.apt:
+    name:
+      - nvidia-cuda-toolkit
+      - nvidia-cuda-toolkit-gcc   # fournit cuda-gcc / cuda-g++ (version de gcc acceptée par nvcc)
+      - build-essential
+      - cmake
+      - git
+      - pkg-config
+    state: present
+    update_cache: "{{ apt_update_cache | default(true) | bool }}"
+    install_recommends: false
+
+- name: Lire la version de nvcc
+  ansible.builtin.command: nvcc --version
+  register: nvcc_version
+  changed_when: false
+
+- name: Afficher la version de CUDA
+  ansible.builtin.debug:
+    msg: "{{ nvcc_version.stdout_lines | last }}"
+
+- name: Créer le dossier des sources de llama.cpp
+  ansible.builtin.file:
+    path: "{{ llama_src_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Récupérer les sources de llama.cpp (archive du tag {{ llama_cuda_version }})
+  ansible.builtin.unarchive:
+    src: "https://github.com/ggml-org/llama.cpp/archive/refs/tags/{{ llama_cuda_version }}.tar.gz"
+    dest: "{{ llama_src_dir }}"
+    remote_src: true
+    extra_opts: ["--strip-components=1"]
+    creates: "{{ llama_src_dir }}/CMakeLists.txt"
+  register: llama_src
+
+- name: Forcer une nouvelle compilation si la version des sources a changé
+  ansible.builtin.file:
+    path: "{{ llama_src_dir }}/build-cuda"
+    state: absent
+  when: llama_src is changed
+
+- name: Configurer la compilation CUDA (cmake)
+  ansible.builtin.command:
+    argv:
+      - cmake
+      - -S
+      - "{{ llama_src_dir }}"
+      - -B
+      - "{{ llama_src_dir }}/build-cuda"
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DGGML_CUDA=ON
+      - "-DCMAKE_CUDA_ARCHITECTURES={{ llama_cuda_archs }}"
+      - -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/cuda-g++
+      - -DBUILD_SHARED_LIBS=OFF     # binaire autonome, pas de .so à copier
+      - -DLLAMA_CURL=OFF            # le modèle est déjà téléchargé par Ansible
+    creates: "{{ llama_src_dir }}/build-cuda/CMakeCache.txt"
+
+- name: Compiler llama-server et llama-bench avec CUDA (20 à 30 minutes)
+  ansible.builtin.command:
+    argv:
+      - cmake
+      - --build
+      - "{{ llama_src_dir }}/build-cuda"
+      - --config
+      - Release
+      - -j
+      - "{{ ansible_facts['processor_vcpus'] }}"
+      - --target
+      - llama-server
+      - llama-bench
+    creates: "{{ llama_src_dir }}/build-cuda/bin/llama-server"
+  async: 3600     # la compilation dépasse le délai SSH normal
+  poll: 30
+
+- name: Installer les binaires CUDA dans {{ llama_install_dir }}
+  ansible.builtin.copy:
+    src: "{{ llama_src_dir }}/build-cuda/bin/{{ item }}"
+    dest: "{{ llama_install_dir }}/{{ item }}"
+    remote_src: true
+    owner: "{{ ansible_svc_user }}"
+    group: "{{ ansible_svc_user }}"
+    mode: "0755"
+  loop:
+    - llama-server
+    - llama-bench
+  notify: Redémarrer llama-server
+
+- name: Vérifier que llama-server voit la P100 via CUDA
+  ansible.builtin.command: "{{ llama_install_dir }}/llama-server --list-devices"
+  register: cuda_devices
+  changed_when: false
+  failed_when: "'CUDA' not in cuda_devices.stdout ~ cuda_devices.stderr"
+
+- name: Afficher les périphériques vus par llama.cpp
+  ansible.builtin.debug:
+    msg: "{{ (cuda_devices.stdout ~ cuda_devices.stderr) | trim }}"

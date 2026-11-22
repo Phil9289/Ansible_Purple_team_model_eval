@@ -74,21 +74,54 @@
   when: item not in running_vms
   no_log: true
 
-- name: Attacher la P100 à la VM agent (VM éteinte seulement)
-  community.proxmox.proxmox_kvm:
-    api_host: "{{ vault_proxmox_api_host }}"
-    validate_certs: false
-    api_user: "{{ vault_proxmox_api_user }}"
-    api_token_id: "{{ vault_proxmox_api_token_id }}"
-    api_token_secret: "{{ vault_proxmox_api_token_secret }}"
-    node: "{{ proxmox_node }}"
-    vmid: "{{ hostvars[groups['attacker'][0]]['vmid'] }}"
-    hostpci:
-      hostpci0: "mapping={{ gpu_pci_mapping }},pcie=1"
-    update: true
-    update_unsafe: true
-  when: gpu_passthrough | bool and groups['attacker'][0] not in running_vms
-  no_log: true
+- name: Vérifier que le stockage local accepte les snippets (hookscript)
+  ansible.builtin.command: pvesm status --content snippets
+  register: snippets_storage
+  changed_when: false
+  delegate_to: "{{ groups['proxmox_host'][0] }}"
+  connection: ssh
+  when: gpu_passthrough | bool
+
+- name: Arrêter si le stockage local n'accepte pas les snippets
+  ansible.builtin.assert:
+    that: "'local ' in snippets_storage.stdout"
+    fail_msg: >-
+      Le stockage 'local' n'accepte pas les snippets. Sur le Proxmox, une seule fois :
+      pvesm set local --content "$(pvesm config local | awk '/content/{print $2}'),snippets"
+  when: gpu_passthrough | bool
+
+- name: Déployer le hookscript de partage de la P100 sur le Proxmox
+  ansible.builtin.template:
+    src: p100-hook.sh.j2
+    dest: "{{ gpu_hookscript_path }}"
+    mode: "0755"
+  delegate_to: "{{ groups['proxmox_host'][0] }}"
+  connection: ssh
+  when: gpu_passthrough | bool
+
+- name: Lire la configuration actuelle de la VM agent
+  ansible.builtin.command: "qm config {{ hostvars[groups['attacker'][0]]['vmid'] }}"
+  register: agent_qm_config
+  changed_when: false
+  delegate_to: "{{ groups['proxmox_host'][0] }}"
+  connection: ssh
+  when: gpu_passthrough | bool
+
+- name: Attacher la P100 à la VM agent (q35 + mapping + hookscript, VM éteinte seulement)
+  ansible.builtin.command: >-
+    qm set {{ hostvars[groups['attacker'][0]]['vmid'] }}
+    --machine q35
+    --hostpci0 mapping={{ gpu_pci_mapping }},pcie=1
+    --hookscript {{ gpu_hookscript }}
+  delegate_to: "{{ groups['proxmox_host'][0] }}"
+  connection: ssh
+  when:
+    - gpu_passthrough | bool
+    - groups['attacker'][0] not in running_vms
+    - >-
+      ("mapping=" ~ gpu_pci_mapping) not in agent_qm_config.stdout
+      or ("hookscript: " ~ gpu_hookscript) not in agent_qm_config.stdout
+      or "machine: q35" not in agent_qm_config.stdout
 
 - name: Démarrer chaque VM du lab
   community.proxmox.proxmox_kvm:

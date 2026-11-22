@@ -1,4 +1,66 @@
+# --- Ressources de la VM (lues par le role proxmox_vms) ---
 vmid: 301
 vcpu: 8
 ram_mb: 32768
 disk_gb: 80
+
+# --- Modele LLM & moteur d'inference (propres a l'attaquant) ---
+llm_model_name: "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+llm_model_url: "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+llm_model_cache_dir: "/root/lab-ansible/models-cache"
+llama_release_url: "{{ llama_release_url_gpu if llama_backend == 'vulkan' else llama_release_url_cpu }}"
+llama_release_url_cpu: "https://github.com/ggml-org/llama.cpp/releases/download/b12549/llama-b12549-bin-ubuntu-x64.tar.gz"
+llama_install_dir: "{{ llama_backend_dirs[llama_backend] }}"
+llama_models_dir: "/opt/models"
+llama_port: 8081
+llama_ctx_size: 65536
+llama_threads: 4
+
+# --- Outils de l'attaquant ---
+attacker_tools:
+  - nmap
+  - netcat-openbsd
+  - curl
+  - jq
+  - libgomp1
+
+# --- Agent Hermes (lues par roles/agent_host -> /opt/hermes/hermes.env) ---
+hermes_dir: "/opt/hermes"
+# Moteur LLM : par défaut le llama-server local de la VM (aucune clé, marche en mode isolated).
+hermes_llm_api_url: "http://127.0.0.1:{{ llama_port }}/v1"
+hermes_llm_model: "{{ llm_model_name }}"
+# Vide pour llama-server local. Pour une API externe : "{{ vault_hermes_llm_api_key }}"
+hermes_llm_api_key: ""
+hermes_temperature: 0.2
+hermes_max_tokens: 300
+hermes_llm_timeout: 600
+# Cible lue dans l'inventaire (rien en dur)
+hermes_target_host: "{{ hostvars[groups['web'][0]]['ansible_host'] }}"
+hermes_target_port: "{{ hostvars[groups['web'][0]]['nginx_listen_port'] }}"
+# true = lancer une mission à chaque 05-agent.yml (casse l'idempotence, garder false)
+hermes_run_on_deploy: false
+
+# --- Moteur GPU (P100) : choisi automatiquement selon gpu_passthrough ---
+llama_release_url_gpu: "https://github.com/ggml-org/llama.cpp/releases/download/b12549/llama-b12549-bin-ubuntu-vulkan-x64.tar.gz"
+llama_gpu_layers: "{{ 99 if llama_backend in ['vulkan', 'cuda'] else 0 }}"
+llama_extra_args: "{{ '-fa off' if gpu_passthrough | bool else '' }} --jinja -np 1 --rope-scaling yarn --rope-scale 2 --yarn-orig-ctx 32768"
+
+# --- Hermes Agent (Nous Research) : rôle hermes_agent ---
+hermes_agent_user: hermes
+hermes_agent_model: "{{ llm_model_name }}"
+hermes_agent_base_url: "http://127.0.0.1:{{ llama_port }}/v1"   # pas de clé API
+hermes_agent_context: 65536
+hermes_agent_approvals: manual        # phil approuve chaque commande dangereuse
+hermes_agent_toolsets: [terminal, file, todo, memory, skills]   # ni web ni browser
+
+# --- Moteur llama.cpp : cpu | vulkan | cuda (2026-11-22) ---
+# cuda = compilé depuis les sources dans la VM (aucun binaire CUDA Linux officiel).
+# Pour revenir à Vulkan : llama_backend: vulkan, puis relancer 05-agent.yml.
+llama_backend: "{{ 'cuda' if gpu_passthrough | bool else 'cpu' }}"
+llama_backend_dirs:
+  cpu: /opt/llama
+  vulkan: /opt/llama-vulkan
+  cuda: /opt/llama-cuda
+llama_cuda_version: "b12549"            # même version que le binaire Vulkan (comparaison juste)
+llama_cuda_archs: "60;86"           # 60 = Tesla P100 (Pascal), 86 = RTX 3060 Ti (Ampere)
+llama_src_dir: /opt/src/llama.cpp

@@ -1,0 +1,41 @@
+# {{ ansible_managed }}
+# Configuration de Hermes Agent (Nous Research) pour le lab Purple Team.
+# Régénérée à chaque passage d'Ansible : une modification à la main sera écrasée.
+{{ hermes_config_version.stdout | default('') }}
+
+model:
+  provider: custom                      # tout serveur compatible OpenAI (llama.cpp)
+  base_url: "{{ hermes_agent_base_url }}"
+  default: "{{ hermes_agent_model }}"
+  context_length: {{ hermes_agent_context }}
+  # Pas d'api_key : le llama-server local n'a pas d'authentification.
+
+# Tâches secondaires (compression, titres) : le même LLM local, jamais OpenRouter
+auxiliary:
+  compression:
+    provider: main
+  title_generation:
+    provider: main
+
+approvals:
+  mode: {{ hermes_agent_approvals }}            # manual | smart | off
+  timeout: {{ hermes_agent_approval_timeout }}  # sans réponse : commande refusée
+  deny:
+{% for motif in hermes_agent_deny_patterns %}
+    - "{{ motif }}"
+{% endfor %}
+
+terminal:
+  backend: local                        # commandes exécutées en tant que {{ hermes_agent_user }}
+  cwd: "{{ hermes_agent_home }}"
+
+platform_toolsets:
+  cli: [{{ hermes_agent_toolsets | join(', ') }}]
+
+telemetry:
+  shared_metrics:
+    enabled: false
+    send: false
+
+updates:
+  check: false                          # le lab est isolé d'Internet

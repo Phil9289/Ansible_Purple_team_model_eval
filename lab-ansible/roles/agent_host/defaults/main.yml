@@ -1,7 +1,34 @@
 ---
-llama_install_dir: "{{ llama_install_dir | default('/opt/llama') }}"
-llama_models_dir: "{{ llama_models_dir | default('/opt/models') }}"
-llm_model_name: "{{ llm_model_name | default('Qwen2.5-7B-Instruct-Q4_K_M.gguf') }}"
-llama_port: "{{ llama_port | default(8081) }}"
-llama_ctx_size: "{{ llama_ctx_size | default(4096) }}"
-llama_threads: "{{ llama_threads | default(4) }}"
+# Valeurs par defaut : la plus faible precedence.
+# inventory/host_vars/agent.yml les remplace.
+llama_install_dir: "/opt/llama"
+llama_models_dir: "/opt/models"
+llm_model_name: "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+llm_model_cache_dir: "/root/lab-ansible/models-cache"
+llama_port: 8081
+llama_ctx_size: 4096
+llama_threads: 4
+attacker_tools:
+  - nmap
+  - netcat-openbsd
+  - curl
+  - jq
+
+# --- Agent Hermes : valeurs par défaut, remplacées par host_vars/agent.yml ---
+hermes_dir: "/opt/hermes"
+hermes_llm_api_url: "http://127.0.0.1:8081/v1"
+hermes_llm_model: "local-model"
+hermes_llm_api_key: ""
+hermes_temperature: 0.2
+hermes_max_tokens: 300
+hermes_llm_timeout: 600
+hermes_target_host: "10.30.0.20"
+hermes_target_port: 8080
+hermes_run_on_deploy: false
+llama_gpu_layers: 0
+llama_extra_args: ""
+llama_backend: cpu
+llama_backend_dirs:
+  cpu: /opt/llama
+  vulkan: /opt/llama-vulkan
+  cuda: /opt/llama-cuda

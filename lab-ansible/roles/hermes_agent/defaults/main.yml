@@ -1,0 +1,22 @@
+---
+# Valeurs par défaut du rôle hermes_agent (surchargées dans inventory/host_vars/agent.yml)
+hermes_agent_user: hermes
+hermes_agent_home: "/home/{{ hermes_agent_user }}"
+hermes_agent_install_url: "https://hermes-agent.nousresearch.com/install.sh"
+hermes_agent_install_flags: "--non-interactive --skip-browser --skip-computer-use"
+hermes_agent_model: "{{ llm_model_name }}"
+hermes_agent_base_url: "http://127.0.0.1:{{ llama_port }}/v1"
+hermes_agent_context: 65536
+# manual = Hermes demande l'accord pour chaque commande jugée dangereuse
+hermes_agent_approvals: manual
+hermes_agent_approval_timeout: 300
+# Outils permis en mode CLI. Pas de web / browser / vision / image_gen / tts :
+# inutiles (le lab n'a pas Internet) ou dépendants d'API externes.
+hermes_agent_toolsets: [terminal, file, todo, memory, skills]
+# Motifs toujours refusés, même si l'agent insiste (fnmatch)
+hermes_agent_deny_patterns:
+  - "sudo *"
+  - "su *"
+  - "nft *"
+  - "ssh *"
+hermes_agent_env: {}

@@ -1,0 +1,79 @@
+---
+# Accès SSH d'administration aux VM du lab depuis trois postes :
+#   - le nœud de contrôle (LXC 300) : root -> ansible@VM, clé /root/.ssh/id_ed25519
+#   - l'hôte Proxmox : root -> ansible@VM, clé dédiée /root/.ssh/id_lab_ed25519
+#   - le PC de l'admin : ProxyJump par le LXC 300 (seule source autorisée par nftables)
+# Tout est regénéré à chaque site.yml : rien à refaire à la main après un rebuild.
+
+- name: Hôte Proxmox — clé SSH dédiée au lab et alias
+  hosts: proxmox_host
+  gather_facts: false
+  vars:
+    ssh_lab_identity: /root/.ssh/id_lab_ed25519
+  tasks:
+    - name: Créer le dossier /root/.ssh
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        mode: "0700"
+
+    - name: Générer la clé dédiée au lab (une seule fois)
+      ansible.builtin.command:
+        cmd: ssh-keygen -t ed25519 -N "" -C "root@{{ inventory_hostname }}-lab" -f {{ ssh_lab_identity }}
+        creates: "{{ ssh_lab_identity }}"
+
+    - name: Lire la clé publique du Proxmox
+      ansible.builtin.slurp:
+        src: "{{ ssh_lab_identity }}.pub"
+      register: pve_lab_pubkey
+
+    - name: Écrire les alias des VM dans /root/.ssh/config
+      ansible.builtin.blockinfile:
+        path: /root/.ssh/config
+        create: true
+        mode: "0600"
+        insertbefore: BOF
+        marker: "# {mark} ANSIBLE — alias du lab Purple Team"
+        block: "{{ lookup('ansible.builtin.template', 'ssh_config_lab.j2') }}"
+
+- name: VM du lab — autoriser les clés d'administration
+  hosts: lab
+  become: true
+  gather_facts: false
+  vars:
+    admin_keys: >-
+      {{ [hostvars[groups['proxmox_host'][0]]['pve_lab_pubkey']['content'] | b64decode | trim]
+         + (lab_admin_ssh_pubkeys | default([])) }}
+  tasks:
+    - name: Ajouter la clé du Proxmox et celles de lab_admin_ssh_pubkeys
+      ansible.posix.authorized_key:
+        user: "{{ ansible_svc_user }}"
+        key: "{{ item }}"
+        state: present
+      loop: "{{ admin_keys }}"
+      loop_control:
+        label: "{{ item.split(' ')[-1] }}"
+
+- name: Nœud de contrôle — alias SSH et configuration Ansible
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ssh_lab_identity: "{{ lab_ssh_pubkey | regex_replace('\\.pub$', '') }}"
+  tasks:
+    - name: Écrire les alias des VM dans /root/.ssh/config
+      ansible.builtin.blockinfile:
+        path: /root/.ssh/config
+        create: true
+        mode: "0600"
+        insertbefore: BOF
+        marker: "# {mark} ANSIBLE — alias du lab Purple Team"
+        block: "{{ lookup('ansible.builtin.template', 'ssh_config_lab.j2') }}"
+
+    - name: Rendre l'inventaire visible depuis n'importe quel dossier
+      ansible.builtin.blockinfile:
+        path: /root/.bashrc
+        marker: "# {mark} ANSIBLE — configuration du lab"
+        block: |
+          export ANSIBLE_CONFIG={{ playbook_dir }}/ansible.cfg
+          alias lab='cd {{ playbook_dir }}'

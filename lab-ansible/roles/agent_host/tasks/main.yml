@@ -1,7 +1,7 @@
 ---
-- name: Installer les outils offensifs et utilitaires Python
+- name: Installer les outils de l'attaquant
   ansible.builtin.apt:
-    name: "{{ offensive_tools }}"
+    name: "{{ attacker_tools }}"
     state: present
     update_cache: true
     cache_valid_time: 3600
@@ -28,8 +28,31 @@
     creates: "{{ llama_install_dir }}/llama-server"
     owner: "{{ ansible_svc_user }}"
     group: "{{ ansible_svc_user }}"
+  when: llama_backend != 'cuda'
 
-- name: Télécharger le modèle intelligent Qwen 2.5 7B Instruct GGUF (4.36 Go)
+- name: Compiler llama.cpp avec CUDA si llama_backend vaut cuda
+  ansible.builtin.import_tasks: cuda.yml
+  when: llama_backend == 'cuda'
+
+- name: Vérifier si le modèle est présent dans le cache du nœud de contrôle
+  ansible.builtin.stat:
+    path: "{{ llm_model_cache_dir }}/{{ llm_model_name }}"
+    get_checksum: false
+  delegate_to: localhost
+  become: false
+  register: llm_cache
+
+- name: Copier le modèle depuis le cache local du contrôleur (hors-ligne)
+  ansible.builtin.copy:
+    src: "{{ llm_model_cache_dir }}/{{ llm_model_name }}"
+    dest: "{{ llama_models_dir }}/{{ llm_model_name }}"
+    owner: "{{ ansible_svc_user }}"
+    group: "{{ ansible_svc_user }}"
+    mode: "0644"
+  when: llm_cache.stat.exists
+  notify: Redémarrer llama-server
+
+- name: Télécharger le modèle depuis Hugging Face (repli si le cache est absent)
   ansible.builtin.get_url:
     url: "{{ llm_model_url }}"
     dest: "{{ llama_models_dir }}/{{ llm_model_name }}"
@@ -38,6 +61,12 @@
     mode: "0644"
     timeout: 600
     tmp_dest: "/var/tmp"
+  when: not llm_cache.stat.exists
+  notify: Redémarrer llama-server
+
+- name: Préparer le GPU (pilote NVIDIA + Vulkan) si la P100 est attachée
+  ansible.builtin.import_tasks: gpu.yml
+  when: gpu_passthrough | bool
 
 - name: Déployer le service systemd pour llama-server
   ansible.builtin.template:
@@ -56,10 +85,36 @@
     state: started
     enabled: true
 
-- name: Déployer le script autonome de l'agent Hermes
+- name: Déployer le script de l'agent Hermes
   ansible.builtin.template:
     src: hermes_agent.py.j2
-    dest: /opt/hermes/hermes_agent.py
+    dest: "{{ hermes_dir }}/hermes_agent.py"
     owner: "{{ ansible_svc_user }}"
     group: "{{ ansible_svc_user }}"
     mode: "0755"
+
+- name: Déployer la configuration de Hermes (peut contenir une clé API, d'où 0600)
+  ansible.builtin.template:
+    src: hermes.env.j2
+    dest: "{{ hermes_dir }}/hermes.env"
+    owner: "{{ ansible_svc_user }}"
+    group: "{{ ansible_svc_user }}"
+    mode: "0600"
+
+- name: Déployer le service systemd hermes-agent (mission unique, lancée à la demande)
+  ansible.builtin.template:
+    src: hermes-agent.service.j2
+    dest: /etc/systemd/system/hermes-agent.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Recharger systemd
+
+- name: Appliquer tout de suite le rechargement de systemd
+  ansible.builtin.meta: flush_handlers
+
+- name: Lancer une mission Hermes (seulement si hermes_run_on_deploy est vrai)
+  ansible.builtin.systemd:
+    name: hermes-agent
+    state: started
+  when: hermes_run_on_deploy | bool

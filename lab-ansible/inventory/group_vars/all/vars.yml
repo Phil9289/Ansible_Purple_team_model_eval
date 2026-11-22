@@ -1,28 +1,39 @@
-# --- Réseau du lab ---
+# Variables communes a TOUTES les machines du lab.
+# Les variables propres a une machine sont dans inventory/host_vars/<machine>.yml.
+
+# --- Reseau du lab ---
 lab_network: "10.30.0.0/24"
 lab_bridge: "vmbr3"
 lab_gateway: "10.30.0.1"
 lab_dns: "1.1.1.1"
 lab_mode: "provisioning"
 control_node_ip: "192.168.1.161"
+
+# --- Cibles des tests negatifs de 99-verify.yml ---
 lab_lan_probe_ip: "192.168.1.1"
+lab_internet_probe_ip: "1.1.1.1"
 
 # --- Proxmox ---
+# Ces variables restent ici : proxmox_vms (01-infra) et 90-destroy tournent sur
+# localhost, qui ne lit que group_vars/all (pas host_vars/pve.yml ni agent.yml).
 proxmox_node: "pve"
 lab_template_name: "debian13-cloudinit-tpl"
-lab_template_vmid: 9000
 lab_storage: "nvme-vms"
-gpu_passthrough: false
+gpu_passthrough: true
 gpu_pci_mapping: "p100"
 
-# --- Accès Ansible aux VM ---
+# --- Acces Ansible aux VM ---
 ansible_svc_user: "ansible"
 lab_ssh_pubkey: "/root/.ssh/id_ed25519.pub"
 
-# --- Modèle LLM & Outils ---
-llm_model_url: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
-llama_port: 8081
-offensive_tools:
-  - nmap
-  - netcat-openbsd
-  - curl
+# --- Clés SSH d'administration supplémentaires (une ligne .pub par poste) ---
+# Elles sont ajoutées à l'utilisateur de service de chaque VM par 06-acces-ssh.yml.
+# Exemple (PC Windows, contenu de C:\Users\phil\.ssh\phil_lxc300.pub) :
+#   - "ssh-ed25519 AAAA... phil@PC"
+lab_admin_ssh_pubkeys:
+  - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICwmc0QKeTMRNmCKBARgEjhxSqkhEuj2V8+GdH4rkPC7 phil@Phil-PC"
+
+# --- P100 partagée à tour de rôle (VM agent <-> conteneurs 240/242/245) ---
+gpu_pci_address: "0000:04:00.0"
+gpu_hookscript: "local:snippets/p100-hook.sh"
+gpu_hookscript_path: "/var/lib/vz/snippets/p100-hook.sh"

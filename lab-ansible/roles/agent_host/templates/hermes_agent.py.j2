@@ -1,104 +1,118 @@
 #!/usr/bin/env python3
+# {{ ansible_managed }}
 """
-Hermes Purple Team Agent (Simulation d'attaque autonome via LLM local).
-Interroge llama-server en local sur 127.0.0.1:{{ llama_port }},
-analyse la cible 10.30.0.20:8080 et execute l'exploit de collecte d'information.
+Hermes Purple Team Agent (simulation d'attaque autonome via LLM).
+Toute la configuration vient de {{ hermes_dir }}/hermes.env, généré par Ansible.
+Lancement : sudo systemctl start hermes-agent   (journal : journalctl -u hermes-agent)
 """
 import json
+import os
+import re
 import subprocess
 import sys
 import time
 import urllib.request
-import urllib.error
 
-LLM_API_URL = "http://127.0.0.1:{{ llama_port }}/v1/chat/completions"
-TARGET_HOST = "10.30.0.20"
-TARGET_PORT = 8080
+API_URL = os.environ.get("HERMES_LLM_API_URL", "http://127.0.0.1:{{ llama_port }}/v1").rstrip("/")
+MODEL = os.environ.get("HERMES_LLM_MODEL", "local-model")
+API_KEY = os.environ.get("HERMES_LLM_API_KEY", "")
+TEMPERATURE = float(os.environ.get("HERMES_TEMPERATURE", "0.2"))
+MAX_TOKENS = int(os.environ.get("HERMES_MAX_TOKENS", "300"))
+LLM_TIMEOUT = int(os.environ.get("HERMES_LLM_TIMEOUT", "600"))
+TARGET_HOST = os.environ.get("HERMES_TARGET_HOST", "{{ hermes_target_host }}")
+TARGET_PORT = int(os.environ.get("HERMES_TARGET_PORT", "{{ hermes_target_port }}"))
+REPORT = os.environ.get("HERMES_REPORT", "{{ hermes_dir }}/attack_report.json")
+
+
+def headers():
+    h = {"Content-Type": "application/json", "User-Agent": "hermes"}
+    if API_KEY:
+        h["Authorization"] = f"Bearer {API_KEY}"
+    return h
+
 
 def send_syslog(msg):
-    try:
-        subprocess.run(["logger", "-t", "hermes-agent", msg], check=False)
-    except Exception:
-        pass
+    subprocess.run(["logger", "-t", "hermes-agent", msg], check=False)
 
-def check_llm_ready(max_retries=15):
-    health_url = "http://127.0.0.1:{{ llama_port }}/health"
-    print(f"[*] Attente de la disponibilite de llama-server ({health_url})...")
-    for i in range(max_retries):
+
+def check_llm_ready(max_wait=300):
+    """Attend que l'API réponde (le 7B peut prendre du temps à charger sur CPU)."""
+    url = f"{API_URL}/models"
+    print(f"[*] Attente du moteur LLM ({url}), {max_wait} s max...")
+    fin = time.time() + max_wait
+    while time.time() < fin:
         try:
-            req = urllib.request.Request(health_url, headers={"User-Agent": "hermes"})
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            req = urllib.request.Request(url, headers=headers())
+            with urllib.request.urlopen(req, timeout=5) as resp:
                 if resp.status == 200:
-                    print("[+] llama-server est pret !")
+                    print("[+] Moteur LLM prêt.")
                     return True
         except Exception:
-            time.sleep(2)
+            pass
+        time.sleep(3)
     return False
+
 
 def query_llm(prompt):
     payload = {
-        "model": "qwen2.5-7b",
+        "model": MODEL,
         "messages": [
-            {"role": "system", "content": "Tu es un agent d'audit de sécurité offensif automatisé. Réponds de façon concise et technique."},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": "Tu es un agent d'audit de sécurité offensif automatisé dans un laboratoire isolé. Réponds de façon concise et technique."},
+            {"role": "user", "content": prompt},
         ],
-        "temperature": 0.2,
-        "max_tokens": 150
+        "temperature": TEMPERATURE,
+        "max_tokens": MAX_TOKENS,
     }
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(LLM_API_URL, data=data, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        result = json.loads(resp.read().decode("utf-8"))
-        return result["choices"][0]["message"]["content"]
+    req = urllib.request.Request(f"{API_URL}/chat/completions",
+                                 data=json.dumps(payload).encode("utf-8"), headers=headers())
+    with urllib.request.urlopen(req, timeout=LLM_TIMEOUT) as resp:
+        return json.loads(resp.read().decode("utf-8"))["choices"][0]["message"]["content"]
+
 
 def main():
-    send_syslog("[AGENT-INIT] Demarrage de la mission d'audit Hermes")
-    print("=== Agent Hermes Purple Team ===")
-    
-    # 1. Verification du moteur LLM
-    if not check_llm_ready():
-        print("[-] ERREUR: llama-server ne repond pas sur le port {{ llama_port }}")
-        sys.exit(1)
-        
-    # 2. Reconnaissance reseau
-    print(f"[*] Phase 1: Scan de reconnaissance Nmap sur {TARGET_HOST}:{TARGET_PORT}...")
-    nmap_cmd = ["nmap", "-p", str(TARGET_PORT), "-sV", "--open", TARGET_HOST]
-    res = subprocess.run(nmap_cmd, capture_output=True, text=True)
-    scan_output = res.stdout
-    print(scan_output)
-    send_syslog(f"[RECON] Scan nmap termine sur {TARGET_HOST}:{TARGET_PORT}")
-    
-    # 3. Interrogation du LLM pour formuler le diagnostic et l'exploit
-    prompt = f"""Voici le résultat d'un scan Nmap sur une cible de laboratoire :
-{scan_output}
+    send_syslog("[AGENT-INIT] Démarrage de la mission d'audit Hermes")
+    print(f"=== Agent Hermes Purple Team — modèle {MODEL}, cible {TARGET_HOST}:{TARGET_PORT} ===")
 
-Analyse ce service web. Quel est le service détecté ? Propose une commande curl pour tester si un listage de répertoire ou une ressource est accessible."""
-    print("[*] Phase 2: Consultation du LLM Qwen 2.5 7B pour analyse tactique...")
-    llm_analysis = query_llm(prompt)
-    print("\n--- Reponse de l'Agent LLM ---")
-    print(llm_analysis)
-    print("-------------------------------\n")
-    
-    # 4. Execution de l'exploit (collecte web de la cible)
-    target_url = f"http://{TARGET_HOST}:{TARGET_PORT}/"
-    print(f"[*] Phase 3: Execution de la requete d'exploitation vers {target_url}...")
-    curl_res = subprocess.run(["curl", "-s", "-i", target_url], capture_output=True, text=True)
-    exploit_output = curl_res.stdout
-    send_syslog(f"[EXPLOIT] Requete HTTP envoyee a {target_url} - Reponse recue")
-    
-    # 5. Rapport d'attaque
+    if not check_llm_ready():
+        print(f"[-] ERREUR : le moteur LLM ne répond pas sur {API_URL}")
+        print("    Vérifier : systemctl status llama-server ; journalctl -u llama-server -n 50")
+        send_syslog("[AGENT-ERROR] Moteur LLM indisponible")
+        sys.exit(1)
+
+    print(f"[*] Phase 1 : scan nmap de {TARGET_HOST}:{TARGET_PORT}...")
+    scan = subprocess.run(["nmap", "-p", str(TARGET_PORT), "-sV", "--open", TARGET_HOST],
+                          capture_output=True, text=True).stdout
+    print(scan)
+    send_syslog(f"[RECON] Scan nmap terminé sur {TARGET_HOST}:{TARGET_PORT}")
+
+    prompt = (f"Voici le résultat d'un scan Nmap sur une cible de laboratoire :\n{scan}\n\n"
+              "Analyse ce service web. Quel est le service détecté ? Propose une commande curl "
+              "pour tester si un listage de répertoire ou une ressource est accessible.")
+    print("[*] Phase 2 : analyse tactique par le LLM (peut prendre 1 à 3 min sur CPU)...")
+    t0 = time.time()
+    analysis = query_llm(prompt)
+    print(f"\n--- Réponse du LLM ({time.time() - t0:.0f} s) ---\n{analysis}\n-------------------------------\n")
+
+    url = f"http://{TARGET_HOST}:{TARGET_PORT}/"
+    print(f"[*] Phase 3 : requête d'exploitation vers {url}...")
+    evidence = subprocess.run(["curl", "-s", "-i", "-m", "10", url], capture_output=True, text=True).stdout
+    ok = re.match(r"HTTP/\S+ 200", evidence) is not None
+    send_syslog(f"[EXPLOIT] Requête HTTP envoyée à {url} - {'succès' if ok else 'échec'}")
+
     report = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "model": MODEL,
         "target": f"{TARGET_HOST}:{TARGET_PORT}",
-        "scan": scan_output,
-        "llm_analysis": llm_analysis,
-        "exploit_status": "SUCCESS" if "HTTP/1.1 200 OK" in exploit_output else "FAILED",
-        "exploit_evidence": exploit_output[:300]
+        "scan": scan,
+        "llm_analysis": analysis,
+        "exploit_status": "SUCCESS" if ok else "FAILED",
+        "exploit_evidence": evidence[:300],
     }
-    with open("/opt/hermes/attack_report.json", "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2)
-    print("[+] Rapport de mission enregistre dans /opt/hermes/attack_report.json")
-    send_syslog("[AGENT-FINISH] Mission d'audit terminee avec succes")
+    with open(REPORT, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    print(f"[+] Rapport enregistré dans {REPORT}")
+    send_syslog("[AGENT-FINISH] Mission d'audit terminée")
+
 
 if __name__ == "__main__":
     main()

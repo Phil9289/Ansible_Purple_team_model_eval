@@ -1,0 +1,47 @@
+---
+# Exécuté seulement si gpu_passthrough est vrai. Nécessite Internet (mode provisioning).
+- name: Ajouter les composants non-free de Debian (pilote NVIDIA)
+  ansible.builtin.deb822_repository:
+    name: debian-nonfree
+    types: [deb]
+    uris: [http://deb.debian.org/debian]
+    suites: ["{{ ansible_facts['distribution_release'] }}", "{{ ansible_facts['distribution_release'] }}-updates"]
+    components: [contrib, non-free, non-free-firmware]
+    signed_by: /usr/share/keyrings/debian-archive-keyring.gpg
+
+- name: Installer le pilote NVIDIA, Vulkan et les en-têtes du noyau
+  ansible.builtin.apt:
+    name:
+      - "linux-headers-{{ ansible_facts['kernel'] }}"
+      - nvidia-driver
+      - nvidia-kernel-dkms
+      - nvidia-smi
+      - firmware-misc-nonfree
+      - nvidia-vulkan-icd
+      - libvulkan1
+      - vulkan-tools
+    state: present
+    update_cache: "{{ apt_update_cache | default(true) | bool }}"
+    install_recommends: false
+  register: nvidia_install
+
+- name: Redémarrer la VM pour charger le pilote NVIDIA (première installation seulement)
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+  when: nvidia_install is changed
+
+- name: Vérifier que la P100 est vue par le pilote
+  ansible.builtin.command: nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+  register: nvidia_smi
+  changed_when: false
+
+- name: Afficher la carte détectée
+  ansible.builtin.debug:
+    msg: "GPU : {{ nvidia_smi.stdout }}"
+
+- name: Donner à l'utilisateur de service l'accès au GPU (groupes video et render)
+  ansible.builtin.user:
+    name: "{{ ansible_svc_user }}"
+    groups: [video, render]
+    append: true
+  notify: Redémarrer llama-server
