@@ -21,7 +21,7 @@
     name: [git, curl, tar, xz-utils, ca-certificates, libatomic1]
     state: present
 
-- name: Créer l'utilisateur dédié hermes (aucun groupe sudo)
+- name: Créer l'utilisateur dédié hermes (aucun groupe sudo, sudo limité plus bas)
   ansible.builtin.user:
     name: "{{ hermes_agent_user }}"
     home: "{{ hermes_agent_home }}"
@@ -30,9 +30,27 @@
     append: false
     create_home: true
 
-- name: S'assurer qu'aucune règle sudoers ne vise hermes
+- name: Donner à hermes le sudo limité aux commandes permises (validé par visudo)
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ hermes_agent_user }}"
+    content: |
+      # Géré par Ansible (rôle hermes_agent). Chaque commande est approuvée dans Hermes.
+      {{ hermes_agent_user }} ALL=(root) NOPASSWD: {{ hermes_agent_sudo_commands | join(', ') }}
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s
+  when: hermes_agent_sudo_commands | length > 0
+
+- name: Retirer toute règle sudoers de hermes quand aucune commande n'est permise
   ansible.builtin.file:
     path: "/etc/sudoers.d/{{ hermes_agent_user }}"
+    state: absent
+  when: hermes_agent_sudo_commands | length == 0
+
+- name: Retirer la règle de test manuelle du 22 nov (remplacée par la précédente)
+  ansible.builtin.file:
+    path: "/etc/sudoers.d/{{ hermes_agent_user }}-nmap"
     state: absent
 
 - name: Vérifier si Hermes Agent est déjà installé

@@ -52,6 +52,9 @@ hermes_agent_base_url: "http://127.0.0.1:{{ llama_port }}/v1"   # pas de clé AP
 hermes_agent_context: 65536
 hermes_agent_approvals: manual        # phil approuve chaque commande dangereuse
 hermes_agent_toolsets: [terminal, file, todo, memory, skills]   # ni web ni browser
+# Root seulement pour nmap (scans -O, -sS), choisi par phil le 22 nov 2026.
+# Hermes demande l'accord avant chaque sudo ; « sudo ... --script » reste refusé.
+hermes_agent_sudo_commands: [/usr/bin/nmap]
 
 # --- Moteur llama.cpp : cpu | vulkan | cuda (2026-11-22) ---
 # cuda = compilé depuis les sources dans la VM (aucun binaire CUDA Linux officiel).
