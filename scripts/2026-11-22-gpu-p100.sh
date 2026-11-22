@@ -117,7 +117,7 @@ s = s[:debut] + '''- name: Vérifier que le stockage local accepte les snippets 
     that: "'local ' in snippets_storage.stdout"
     fail_msg: >-
       Le stockage 'local' n'accepte pas les snippets. Sur le Proxmox, une seule fois :
-      pvesm set local --content "$(pvesm config local | awk '/content/{print $2}'),snippets"
+      ajoute snippets a la ligne content de "dir: local" dans /etc/pve/storage.cfg, avec pvesm set local --content LISTE,snippets
   when: gpu_passthrough | bool
 
 - name: Déployer le hookscript de partage de la P100 sur le Proxmox
@@ -153,6 +153,8 @@ s = s[:debut] + '''- name: Vérifier que le stockage local accepte les snippets 
 open(p, 'w', encoding='utf-8').write(s)
 print("proxmox_vms mis à jour")
 PY
+# Le play tourne en connection: local : les tâches déléguées au Proxmox doivent forcer SSH
+grep -q "connection: ssh" "$VMS" || sed -i '/delegate_to: .*proxmox_host/a\  connection: ssh' "$VMS"
 
 # --- 4. agent_host : pilote NVIDIA + Vulkan ----------------------------------------
 cat > roles/agent_host/tasks/gpu.yml << 'EOF'
