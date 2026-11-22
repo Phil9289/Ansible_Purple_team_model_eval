@@ -30,6 +30,12 @@
     group: "{{ ansible_svc_user }}"
   when: llama_backend != 'cuda'
 
+# Le GPU d'abord : gpu.yml ajoute les dépôts non-free et le pilote,
+# dont cuda.yml a besoin (nvidia-cuda-toolkit vient de non-free).
+- name: Préparer le GPU (pilote NVIDIA + Vulkan) si la P100 est attachée
+  ansible.builtin.import_tasks: gpu.yml
+  when: gpu_passthrough | bool
+
 - name: Compiler llama.cpp avec CUDA si llama_backend vaut cuda
   ansible.builtin.import_tasks: cuda.yml
   when: llama_backend == 'cuda'
@@ -63,10 +69,6 @@
     tmp_dest: "/var/tmp"
   when: not llm_cache.stat.exists
   notify: Redémarrer llama-server
-
-- name: Préparer le GPU (pilote NVIDIA + Vulkan) si la P100 est attachée
-  ansible.builtin.import_tasks: gpu.yml
-  when: gpu_passthrough | bool
 
 - name: Déployer le service systemd pour llama-server
   ansible.builtin.template:
