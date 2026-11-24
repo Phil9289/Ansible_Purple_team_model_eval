@@ -1,0 +1,53 @@
+---
+# Rôle firewall_isolation : deux couches.
+#   1. nftables : politique d'entrée de l'hôte (SSH + loopback, reste DROP).
+#   2. Chaîne DOCKER-USER : empêche TOUT conteneur Docker de pivoter vers les
+#      réseaux privés (LAN maison) tout en gardant Internet pour le cerveau cloud.
+#      -> répond directement au piège déjà vu : un agent qui scanne le LAN.
+#
+# Rappel : Docker contourne la politique nftables 'input'/'filter' standard et
+# gère lui-même le FORWARD. La seule façon fiable d'y insérer des règles est la
+# chaîne DOCKER-USER (programmée via iptables, qui sur Debian/Ubuntu moderne
+# écrit en réalité dans nftables).
+
+- name: Déposer la configuration nftables de base de l'hôte
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "nft -c -f %s"
+  notify: Recharger nftables
+
+- name: Installer le script d'isolation DOCKER-USER
+  ansible.builtin.template:
+    src: pentagi-docker-user.sh.j2
+    dest: /usr/local/sbin/pentagi-docker-user.sh
+    owner: root
+    group: root
+    mode: "0750"
+  notify: Réappliquer l'isolation DOCKER-USER
+
+- name: Installer l'unité systemd qui réapplique l'isolation après Docker
+  ansible.builtin.template:
+    src: pentagi-docker-user.service.j2
+    dest: /etc/systemd/system/pentagi-docker-user.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Recharger systemd
+    - Réappliquer l'isolation DOCKER-USER
+
+- name: Activer l'unité d'isolation (au démarrage et maintenant)
+  ansible.builtin.systemd:
+    name: pentagi-docker-user.service
+    enabled: true
+    daemon_reload: true
+    state: started
+
+- name: Ouvrir le pare-feu pour l'UI si demandé (expose_ui_on_lan=true)
+  ansible.builtin.debug:
+    msg: "expose_ui_on_lan=true : pense à autoriser {{ pentagi_listen_port }}/tcp depuis tes seuls postes de confiance (voir nftables.conf.j2)."
+  when: expose_ui_on_lan | default(false)

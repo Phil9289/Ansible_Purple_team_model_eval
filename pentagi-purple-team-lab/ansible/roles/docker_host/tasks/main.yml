@@ -1,0 +1,57 @@
+---
+# Rôle docker_host : installe Docker CE + plugin compose (dépôt officiel Docker).
+
+- name: Créer le répertoire des clés APT
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Télécharger la clé GPG Docker
+  ansible.builtin.get_url:
+    url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Ajouter le dépôt Docker
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }}
+      signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/{{ ansible_distribution | lower }}
+      {{ ansible_distribution_release }} stable
+    state: present
+    filename: docker
+
+- name: Installer Docker CE et le plugin compose
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+- name: Activer et démarrer Docker
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Ajouter l'utilisateur du labo au groupe docker
+  ansible.builtin.user:
+    name: "{{ lab_user }}"
+    groups: docker
+    append: true
+  notify: Noter la reconnexion docker
+
+- name: Vérifier que Docker répond
+  ansible.builtin.command: docker version --format '{{ "{{" }}.Server.Version{{ "}}" }}'
+  register: docker_ver
+  changed_when: false
+
+- name: Afficher la version de Docker
+  ansible.builtin.debug:
+    msg: "Docker serveur {{ docker_ver.stdout }}"

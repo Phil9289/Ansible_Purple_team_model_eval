@@ -1,0 +1,39 @@
+---
+# ============================================================================
+#  Playbook principal : provisionne de bout en bout l'hôte du labo PentAGI.
+#
+#  Usage :
+#    cd ansible
+#    ansible-galaxy collection install -r requirements.yml -p ./.collections
+#    ansible-playbook site.yml                 # tout
+#    ansible-playbook site.yml --tags docker    # une étape
+#    ansible-playbook site.yml --check          # simulation (dry-run)
+#
+#  Prérequis côté hôte : Debian 12+ / Ubuntu 22.04+, accès SSH + sudo.
+#  Prérequis côté .env : le fichier .env du dépôt doit exister et contenir un
+#  cerveau LLM. Le rôle 'pentagi' le copie sur l'hôte ; il n'invente aucun secret.
+# ============================================================================
+
+- name: Déployer le laboratoire PentAGI Purple Team
+  hosts: pentagi_lab
+  become: true
+
+  roles:
+    - role: common              # paquets de base, durcissement léger
+      tags: [common]
+    - role: docker_host         # Docker CE + compose plugin
+      tags: [docker]
+    - role: firewall_isolation  # nftables + chaîne DOCKER-USER (isolation du champ de tir)
+      tags: [firewall, isolation]
+    - role: pentagi             # copie le projet + docker compose up (stack + cibles)
+      tags: [pentagi]
+    - role: targets             # validation : réseau isolé + cibles atteignables
+      tags: [targets, range, validate]
+
+  post_tasks:
+    - name: Rappel d'accès
+      ansible.builtin.debug:
+        msg:
+          - "Labo déployé sur {{ inventory_hostname }}."
+          - "UI PentAGI : https://{{ pentagi_listen_ip }}:{{ pentagi_listen_port }} (admin@pentagi.com / admin — à changer)"
+          - "Si expose_ui_on_lan=false : tunnel SSH ->  ssh -L {{ pentagi_listen_port }}:127.0.0.1:{{ pentagi_listen_port }} {{ lab_user }}@{{ ansible_host }}"

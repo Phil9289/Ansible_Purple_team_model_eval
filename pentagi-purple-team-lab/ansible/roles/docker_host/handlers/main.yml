@@ -1,0 +1,4 @@
+---
+- name: Noter la reconnexion docker
+  ansible.builtin.debug:
+    msg: "{{ lab_user }} ajouté au groupe docker ; une reconnexion SSH est nécessaire pour l'utiliser sans sudo."

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# Isolation des conteneurs Docker du labo PentAGI.
+#
+# Objectif : un conteneur (agent PentAGI ou cible) peut sortir vers Internet
+# (nécessaire au cerveau cloud), mais NE PEUT PAS atteindre les réseaux privés
+# de l'hôte (ton LAN maison). On empêche ainsi tout pivot/scan du réseau réel.
+#
+# Méthode : une chaîne dédiée PENTAGI-ISOLATION appelée depuis DOCKER-USER.
+# Idempotent : on recrée la chaîne à chaque exécution.
+set -euo pipefail
+
+IFACE="{{ lab_primary_iface }}"
+CHAIN="PENTAGI-ISOLATION"
+PRIVATE_NETS=(
+{% for net in private_networks %}
+  "{{ net }}"
+{% endfor %}
+)
+
+# iptables (backend nft sur Debian/Ubuntu modernes)
+IPT="iptables"
+
+# 1. Crée la chaîne si absente, puis vide-la
+${IPT} -N "${CHAIN}" 2>/dev/null || true
+${IPT} -F "${CHAIN}"
+
+# 2. Autorise les retours de connexions déjà établies
+${IPT} -A "${CHAIN}" -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+
+# 3. Bloque tout paquet SORTANT par l'interface de l'hôte vers un réseau privé.
+#    (On matche -o IFACE : le trafic inter-conteneurs ne sort pas par là, il
+#     n'est donc PAS affecté — les agents atteignent toujours les cibles.)
+for net in "${PRIVATE_NETS[@]}"; do
+  ${IPT} -A "${CHAIN}" -o "${IFACE}" -d "${net}" -j DROP
+done
+
+# 4. Sinon, laisse passer (Internet pour le cerveau cloud / pull d'images)
+${IPT} -A "${CHAIN}" -j RETURN
+
+# 5. Branche DOCKER-USER sur notre chaîne (une seule fois, en tête)
+if ! ${IPT} -C DOCKER-USER -j "${CHAIN}" 2>/dev/null; then
+  ${IPT} -I DOCKER-USER -j "${CHAIN}"
+fi
+
+echo "Isolation DOCKER-USER appliquée (iface=${IFACE}, réseaux privés bloqués côté sortie hôte)."

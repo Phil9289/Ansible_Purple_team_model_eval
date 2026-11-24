@@ -1,0 +1,15 @@
+[Unit]
+# {{ ansible_managed }}
+Description=Isolation DOCKER-USER du labo PentAGI (bloque le pivot vers le LAN privé)
+After=docker.service
+Requires=docker.service
+# Docker réécrit DOCKER-USER à chaque (re)démarrage ; on réapplique après.
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/usr/local/sbin/pentagi-docker-user.sh
+
+[Install]
+WantedBy=multi-user.target

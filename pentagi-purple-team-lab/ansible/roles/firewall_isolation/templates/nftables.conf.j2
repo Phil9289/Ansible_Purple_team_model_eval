@@ -1,0 +1,42 @@
+#!/usr/sbin/nft -f
+# {{ ansible_managed }}
+# Politique d'entrée de l'hôte du labo PentAGI.
+# NB : le FORWARD des conteneurs est géré par Docker (chaîne DOCKER-USER),
+#      pas ici. Ce fichier ne couvre que le trafic À DESTINATION de l'hôte.
+
+flush ruleset
+
+table inet filter {
+    chain input {
+        type filter hook input priority 0; policy drop;
+
+        iif "lo" accept
+        ct state established,related accept
+        ct state invalid drop
+
+        # ICMP/ping (diagnostic)
+        ip protocol icmp accept
+        ip6 nexthdr ipv6-icmp accept
+
+        # SSH : administration de l'hôte du labo
+        tcp dport 22 accept
+
+{% if expose_ui_on_lan | default(false) %}
+        # UI PentAGI exposée sur le LAN (expose_ui_on_lan=true).
+        # Restreins idéalement à tes postes de confiance, ex. :
+        #   ip saddr 192.168.10.0/24 tcp dport {{ pentagi_listen_port }} accept
+        tcp dport {{ pentagi_listen_port }} accept
+{% else %}
+        # UI non exposée : accès par tunnel SSH uniquement (port {{ pentagi_listen_port }} sur loopback).
+{% endif %}
+    }
+
+    chain forward {
+        # Laisse Docker gérer le forward des conteneurs.
+        type filter hook forward priority 0; policy accept;
+    }
+
+    chain output {
+        type filter hook output priority 0; policy accept;
+    }
+}

@@ -1,0 +1,11 @@
+---
+# (réservé pour de futurs handlers : redémarrage du stack, etc.)
+- name: Redémarrer le stack PentAGI
+  community.docker.docker_compose_v2:
+    project_src: "{{ lab_base_dir }}/compose"
+    files:
+      - docker-compose.pentagi.yml
+      - docker-compose.range.yml
+    env_files:
+      - "{{ lab_base_dir }}/.env"
+    state: restarted

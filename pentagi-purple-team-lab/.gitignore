@@ -1,0 +1,13 @@
+# Secrets et état local — ne JAMAIS committer
+.env
+compose/docker-ssl/
+compose/ssl/
+results/
+*.log
+
+# Ansible
+ansible/.collections/
+ansible/*.retry
+
+# Divers
+.DS_Store

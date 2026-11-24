@@ -1,0 +1,13 @@
+---
+- name: Recharger nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded
+
+- name: Recharger systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Réappliquer l'isolation DOCKER-USER
+  ansible.builtin.command: /usr/local/sbin/pentagi-docker-user.sh
+  changed_when: true

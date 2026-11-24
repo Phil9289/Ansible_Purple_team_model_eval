@@ -1,0 +1,44 @@
+---
+# ============================================================================
+#  Variables communes à tout le labo PentAGI
+#  (Bonne pratique : les variables vivent ici et dans host_vars/, jamais en dur
+#   dans les tâches — comme dans le labo Ansible principal de Phil.)
+# ============================================================================
+
+# Où le projet est déployé sur l'hôte du labo
+lab_base_dir: /opt/pentagi-lab
+
+# Utilisateur non-root qui pilotera Docker (ajouté au groupe docker)
+lab_user: "{{ ansible_user | default('labadmin') }}"
+
+# --- Réseau isolé du champ de tir -------------------------------------------
+range_network_name: pentagi-range
+range_subnet: "172.30.0.0/24"
+juice_shop_ip: "172.30.0.10"
+dvwa_ip: "172.30.0.20"
+
+# --- Fenêtre de ports des bacs à sable PentAGI (rappels/reverse shells) ------
+# Doit correspondre à DOCKER_PORTS_BASE du .env. On bloque cette plage côté LAN.
+docker_ports_base: 28000
+docker_ports_window: 2000   # PentAGI publie dans [base, base+2000]
+
+# --- Isolation réseau --------------------------------------------------------
+# Réseaux privés que le labo ne doit JAMAIS pouvoir atteindre depuis le
+# champ de tir (évite le piège déjà rencontré : un scan qui voit le LAN maison).
+private_networks:
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "192.168.0.0/16"
+  - "169.254.0.0/16"
+  - "100.64.0.0/10"
+
+# Interface réseau principale de l'hôte (adapte si besoin : ip -o link)
+lab_primary_iface: eth0
+
+# Port de l'UI PentAGI et IP d'écoute (loopback par défaut = accès par tunnel SSH)
+pentagi_listen_ip: "127.0.0.1"
+pentagi_listen_port: 8443
+
+# Images cibles (épinglées pour la reproductibilité)
+juice_shop_image: "bkimminich/juice-shop:v19.0.0"
+dvwa_image: "ghcr.io/digininja/dvwa:latest"

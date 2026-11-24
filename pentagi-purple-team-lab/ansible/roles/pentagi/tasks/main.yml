@@ -1,0 +1,59 @@
+---
+# Rôle pentagi : synchronise le projet sur l'hôte et démarre le stack complet
+# (PentAGI officiel + overlay du champ de tir isolé) comme source unique de vérité.
+
+- name: Vérifier qu'un .env existe sur le nœud de contrôle
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../.env"
+  delegate_to: localhost
+  become: false
+  register: local_env
+
+- name: Échouer si le .env est absent
+  ansible.builtin.assert:
+    that: local_env.stat.exists
+    fail_msg: >-
+      Le fichier .env du dépôt est introuvable.
+      Fais : cp .env.lab.example .env ; ./scripts/preflight.sh --gen-secrets ;
+      puis remplis un cerveau LLM (section 2) avant de relancer.
+
+- name: Synchroniser le projet vers l'hôte du labo
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../"
+    dest: "{{ lab_base_dir }}/"
+    delete: false
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=results"
+      - "--exclude=ansible/.collections"
+
+- name: Déposer le .env (avec secrets) sur l'hôte
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../.env"
+    dest: "{{ lab_base_dir }}/.env"
+    owner: "{{ lab_user }}"
+    group: "{{ lab_user }}"
+    mode: "0640"
+
+- name: Garantir DOCKER_NETWORK=pentagi-range dans le .env
+  ansible.builtin.lineinfile:
+    path: "{{ lab_base_dir }}/.env"
+    regexp: '^DOCKER_NETWORK='
+    line: "DOCKER_NETWORK={{ range_network_name }}"
+
+- name: Démarrer le stack PentAGI + champ de tir (docker compose v2)
+  community.docker.docker_compose_v2:
+    project_src: "{{ lab_base_dir }}/compose"
+    files:
+      - docker-compose.pentagi.yml
+      - docker-compose.range.yml
+    env_files:
+      - "{{ lab_base_dir }}/.env"
+    pull: always
+    state: present
+  register: compose_up
+
+- name: Résumé du démarrage
+  ansible.builtin.debug:
+    msg: "Services PentAGI : {{ compose_up.containers | map(attribute='Name') | list }}"
+  when: compose_up.containers is defined
