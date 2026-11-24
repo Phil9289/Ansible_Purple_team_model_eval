@@ -1,0 +1,23 @@
+---
+# Moteur Strata : l'agent n'a plus de modèle local. On arrête llama-server s'il existe
+# (sans le désinstaller : revenir à llm_backend: local le relance).
+- name: Lire l'état du service llama-server
+  ansible.builtin.systemd_service:
+    name: llama-server
+  register: llama_unit
+  failed_when: false
+
+- name: Arrêter et désactiver llama-server (le modèle vient maintenant de Strata)
+  ansible.builtin.systemd_service:
+    name: llama-server
+    state: stopped
+    enabled: false
+  when: (llama_unit.status.LoadState | default('not-found')) == 'loaded'
+
+- name: Vérifier que l'agent joint la passerelle (503 accepté si Strata est éteint)
+  ansible.builtin.uri:
+    url: "{{ agent_gateway_url | regex_replace('/v1$', '') }}/health"
+    status_code: [200, 503]
+    timeout: 10
+  register: agent_gw_health
+  changed_when: false

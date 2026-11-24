@@ -26,6 +26,14 @@ Les identifiants Proxmox (jeton API) sont chiffrés avec Ansible Vault dans `gro
 - `specs/001-ansible-proxmox-llm-lab/` : spécification, plan et tâches (Spec Kit).
 - `.specify/`, `.agents/`, `.agent/` : configuration Spec Kit et règles de l'agent.
 
+## Fusion avec Strata (branche `fusion-strata`)
+
+L'agent n'utilise plus un modèle local de 7B. Il passe par une passerelle (VM 304, `roles/strata_gateway`) vers Strata, le 125B du LXC 242, sur un bridge dédié `vmbr4`. L'agent n'atteint jamais vmbr0 ni l'interface de Strata. Le choix se fait avec `llm_backend: strata | local` dans `inventory/group_vars/all/vars.yml`.
+
+- `docs/test-strata-passerelle.md` : commandes pour le premier test réel, calcul à 64k et retour en arrière.
+- `strata/strata-64k.sh` : passage de Strata à 64k de contexte (dans le LXC 242).
+- `simulation/` : le labo complet en espaces de noms réseau avec un faux Strata (`sudo ./lab-sim.sh up && sudo ./run-tests.sh`).
+
 ## Utilisation
 
 ```bash

@@ -4,3 +4,6 @@
 
 - name: recharger nftables
   ansible.builtin.command: /usr/sbin/nft -f /etc/nftables.d/lab.conf
+
+- name: activer le bridge backend
+  ansible.builtin.command: ifup {{ lab_backend_bridge }}

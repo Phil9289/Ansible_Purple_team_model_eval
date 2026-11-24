@@ -1,0 +1,86 @@
+---
+# Rend les VRAIS gabarits Ansible du labo avec l'inventaire de simulation.
+# Rien n'est modifié dans les rôles : on teste exactement ce qui sera déployé.
+- name: Rendre les fichiers de configuration du labo
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    roles_dir: "{{ playbook_dir }}/../lab-ansible/roles"
+    out: "{{ playbook_dir }}/run"
+  tasks:
+    - name: Dossier de sortie
+      ansible.builtin.file: { path: "{{ out }}", state: directory, mode: "0755" }
+
+    - name: Rendre les gabarits (dans le contexte de chaque hôte)
+      ansible.builtin.template:
+        src: "{{ roles_dir }}/{{ item.src }}"
+        dest: "{{ out }}/{{ item.dest }}"
+        mode: "0644"
+      vars:
+        nginx_listen_port: "{{ hostvars['target']['nginx_listen_port'] }}"
+      delegate_to: localhost
+      loop:
+        - { host: pve, src: proxmox_network/templates/nftables.conf.j2, dest: lab.nft }
+        - { host: logging, src: log_server/templates/rsyslog-server.conf.j2, dest: rsyslog-server.conf }
+        - { host: target, src: web_target/templates/nginx-site.conf.j2, dest: nginx-site.conf }
+      loop_control: { label: "{{ item.dest }}" }
+
+- name: Rendre la config de la passerelle (variables de l'hôte gateway)
+  hosts: gateway
+  gather_facts: false
+  tasks:
+    - name: gateway.env
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../lab-ansible/roles/strata_gateway/templates/gateway.env.j2"
+        dest: "{{ playbook_dir }}/run/gateway.env"
+        mode: "0600"
+      vars:
+        gateway_syslog_address: "tcp://{{ hostvars[groups['logs'][0]]['ansible_host'] }}:514"
+        gateway_listen_host: "{{ ansible_host }}"
+        gateway_queue_max: 4
+        gateway_queue_timeout: 900
+        gateway_rate_per_minute: 30
+        gateway_cooldown_seconds: 0
+        gateway_default_max_tokens: 4096
+        gateway_max_tokens_cap: 8192
+        gateway_max_body_bytes: 1048576
+        gateway_log_prompt_preview: 80
+      delegate_to: localhost
+
+- name: Rendre la config de l'agent (variables de l'hôte agent)
+  hosts: agent
+  gather_facts: false
+  tasks:
+    - name: hermes.env et script de mission
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../lab-ansible/roles/agent_host/templates/{{ item.src }}"
+        dest: "{{ playbook_dir }}/run/{{ item.dest }}"
+        mode: "0644"
+      loop:
+        - { src: hermes.env.j2, dest: hermes.env }
+        - { src: hermes_agent.py.j2, dest: hermes_agent.py }
+      vars:
+        hermes_dir: "{{ playbook_dir }}/run/agent"
+      delegate_to: localhost
+
+    - name: config.yaml de Hermes Agent (Nous Research)
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../lab-ansible/roles/hermes_agent/templates/config.yaml.j2"
+        dest: "{{ playbook_dir }}/run/hermes-config.yaml"
+        mode: "0600"
+      vars:
+        hermes_agent_home: "{{ playbook_dir }}/run/hermes-home"
+        hermes_config_version: { stdout: "" }
+        # Valeurs par défaut du rôle hermes_agent (le rôle n'est pas exécuté ici)
+        hermes_agent_approval_timeout: 300
+        hermes_agent_deny_patterns: >-
+          {{ (['sudo *--script*'] if hermes_agent_sudo_commands | length > 0 else ['sudo *'])
+             + ['su *', 'nft *', 'ssh *'] }}
+      delegate_to: localhost
+
+    - name: Montrer ce que l'agent va utiliser
+      ansible.builtin.debug:
+        msg:
+          - "llm_backend={{ llm_backend }} gpu_passthrough={{ gpu_passthrough }}"
+          - "Hermes -> {{ hermes_agent_base_url }} modèle {{ hermes_agent_model }} contexte moteur {{ agent_engine_context }}"

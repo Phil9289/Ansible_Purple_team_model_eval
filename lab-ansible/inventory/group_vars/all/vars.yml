@@ -19,7 +19,9 @@ lab_internet_probe_ip: "1.1.1.1"
 proxmox_node: "pve"
 lab_template_name: "debian13-cloudinit-tpl"
 lab_storage: "nvme-vms"
-gpu_passthrough: true
+# P100 dans la VM agent seulement si le moteur est local (llm_backend: local).
+# Avec Strata, les deux cartes restent dans le LXC 242.
+gpu_passthrough: "{{ llm_backend == 'local' }}"
 gpu_pci_mapping: "p100"
 
 # --- Acces Ansible aux VM ---
@@ -37,3 +39,27 @@ lab_admin_ssh_pubkeys:
 gpu_pci_address: "0000:04:00.0"
 gpu_hookscript: "local:snippets/p100-hook.sh"
 gpu_hookscript_path: "/var/lib/vz/snippets/p100-hook.sh"
+
+# --- Moteur de l'agent : local (llama.cpp dans la VM 301) | strata (via la passerelle) ---
+# Décision de phil (23 nov 2026) : strata. Pour revenir au modèle local : local.
+llm_backend: strata
+
+# --- Réseau backend : passerelle <-> Strata, sans IP sur l'hôte (aucun routage) ---
+lab_backend_bridge: "vmbr4"
+lab_backend_network: "10.40.0.0/24"
+
+# --- Strata (LXC 242, projet perso de phil) ---
+strata_ctid: 242
+strata_backend_ip: "10.40.0.42"          # 2e interface du LXC 242, sur vmbr4 seulement
+strata_port: 8080
+strata_model_id: "qwen3.8-flash-next-iq2_xs"
+strata_context: 65536                    # Hermes exige >= 64k : lancer Strata avec --max-context 65536
+strata_upstream_key: "strata-local"      # Strata n'a pas de vraie authentification
+strata_timeout: 900
+# true = Ansible ajoute lui-même net1 (vmbr4) au LXC 242. false = phil le fait à la main.
+strata_backend_attach: true
+
+# --- Passerelle ---
+gateway_port: 8000
+# Clé générée une fois sur le contrôleur et gardée hors du dépôt (.secrets/ est ignoré par git).
+strata_gateway_api_key: "{{ lookup('ansible.builtin.password', inventory_dir ~ '/../.secrets/strata_gateway_api_key', chars=['ascii_letters', 'digits'], length=40) }}"

@@ -1,0 +1,36 @@
+---
+# Ajoute au LXC de Strata une 2e interface (eth1) sur le bridge backend, et rien d'autre.
+# Son interface eth0 (vmbr0) et sa configuration GPU ne sont pas touchées.
+- name: Lire la configuration du LXC Strata
+  ansible.builtin.command: "pct config {{ strata_ctid }}"
+  register: strata_pct_config
+  changed_when: false
+  delegate_to: "{{ groups['proxmox_host'][0] }}"
+  connection: ssh
+
+- name: Ajouter eth1 sur {{ lab_backend_bridge }} au LXC Strata (sans passerelle par défaut)
+  ansible.builtin.command: >-
+    pct set {{ strata_ctid }}
+    --net1 name=eth1,bridge={{ lab_backend_bridge }},ip={{ strata_backend_ip }}/24,firewall=0
+  delegate_to: "{{ groups['proxmox_host'][0] }}"
+  connection: ssh
+  when:
+    - strata_backend_attach | bool
+    - "'bridge=' ~ lab_backend_bridge not in strata_pct_config.stdout"
+
+- name: Avertir si net1 doit être ajouté à la main
+  ansible.builtin.debug:
+    msg: >-
+      strata_backend_attach est false : sur le Proxmox, tape
+      pct set {{ strata_ctid }} --net1 name=eth1,bridge={{ lab_backend_bridge }},ip={{ strata_backend_ip }}/24,firewall=0
+  when:
+    - not (strata_backend_attach | bool)
+    - "'bridge=' ~ lab_backend_bridge not in strata_pct_config.stdout"
+
+- name: Vérifier que Strata ne route pas entre vmbr0 et le backend (ip_forward = 0, si le LXC tourne)
+  ansible.builtin.command: "pct exec {{ strata_ctid }} -- cat /proc/sys/net/ipv4/ip_forward"
+  register: strata_forward
+  changed_when: false
+  failed_when: strata_forward.rc == 0 and strata_forward.stdout | trim != '0'
+  delegate_to: "{{ groups['proxmox_host'][0] }}"
+  connection: ssh

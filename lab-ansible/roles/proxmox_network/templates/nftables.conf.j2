@@ -9,6 +9,15 @@ table bridge lab_l2
 destroy table bridge lab_l2
 
 {% set logging_ip = hostvars[groups["logs"][0]]["ansible_host"] %}
+{% set use_strata = (llm_backend | default('local')) == 'strata' %}
+{% if use_strata %}
+{% set gw = groups["llm_gateway"][0] %}
+{% set gw_ip = hostvars[gw]["ansible_host"] %}
+{% set gw_backend_ip = hostvars[gw]["backend_ip"] %}
+{% set gw_tap = "tap" ~ hostvars[gw]["vmid"] %}
+{% set strata_veth = "veth" ~ strata_ctid ~ "i1" %}
+{% set agent_ips = groups["attacker"] | map("extract", hostvars, "ansible_host") | list %}
+{% endif %}
 
 # ---------------------------------------------------------------
 # 1. Ce qui sort du lab (vers l hôte, le LAN, Internet) et ce qui y entre
@@ -16,6 +25,11 @@ destroy table bridge lab_l2
 table inet lab_filter {
     chain input {
         type filter hook input priority 0; policy accept;
+{% if use_strata %}
+        # Le bridge backend n a pas d IP sur l hôte : rien n y entre
+        iifname "{{ lab_backend_bridge }}" limit rate 10/minute log prefix "LAB-DROP-BACKEND-IN "
+        iifname "{{ lab_backend_bridge }}" drop
+{% endif %}
         iifname != "{{ lab_bridge }}" accept
         ct state established,related accept
         iifname "{{ lab_bridge }}" limit rate 10/minute log prefix "LAB-REJECT-IN "
@@ -24,6 +38,13 @@ table inet lab_filter {
 
     chain forward {
         type filter hook forward priority 0; policy accept;
+{% if use_strata %}
+        # Jamais de routage par le bridge backend (passerelle <-> Strata seulement, en couche 2).
+        # Le trafic seulement bridgé (vu ici si br_netfilter est chargé) est filtré par lab_l2.
+        iifname "{{ lab_backend_bridge }}" oifname "{{ lab_backend_bridge }}" accept
+        iifname "{{ lab_backend_bridge }}" drop
+        oifname "{{ lab_backend_bridge }}" drop
+{% endif %}
         ct state established,related accept
 
         # Trafic entre VM du lab (filtré en couche 2 par bridge lab_l2)
@@ -70,6 +91,20 @@ table bridge lab_l2 {
     chain forward {
         type filter hook forward priority 0; policy accept;
 
+{% if use_strata %}
+        # --- Bridge backend {{ lab_backend_bridge }} : passerelle -> Strata:{{ strata_port }}, rien d autre ---
+        meta ibrname "{{ lab_backend_bridge }}" iifname "{{ gw_tap }}i1" ether type ip ip saddr != {{ gw_backend_ip }} drop
+        meta ibrname "{{ lab_backend_bridge }}" iifname "{{ gw_tap }}i1" ether type arp arp saddr ip != {{ gw_backend_ip }} drop
+        meta ibrname "{{ lab_backend_bridge }}" iifname "{{ strata_veth }}" ether type ip ip saddr != {{ strata_backend_ip }} drop
+        meta ibrname "{{ lab_backend_bridge }}" iifname "{{ strata_veth }}" ether type arp arp saddr ip != {{ strata_backend_ip }} drop
+        meta ibrname "{{ lab_backend_bridge }}" ether type arp accept
+        meta ibrname "{{ lab_backend_bridge }}" ip saddr {{ gw_backend_ip }} ip daddr {{ strata_backend_ip }} tcp dport {{ strata_port }} accept
+        # Réponses de Strata seulement : un SYN venant de Strata (nouvelle connexion) est refusé
+        meta ibrname "{{ lab_backend_bridge }}" ip saddr {{ strata_backend_ip }} ip daddr {{ gw_backend_ip }} tcp sport {{ strata_port }} tcp flags & (syn | ack) != syn accept
+        meta ibrname "{{ lab_backend_bridge }}" limit rate 10/minute log prefix "LAB-DROP-BACKEND "
+        meta ibrname "{{ lab_backend_bridge }}" drop
+
+{% endif %}
         # Ne rien filtrer en dehors du bridge du lab (vmbr0, Security Onion, Ludus...)
         meta ibrname != "{{ lab_bridge }}" accept
 
@@ -80,6 +115,18 @@ table bridge lab_l2 {
         iifname "tap{{ hostvars[host]["vmid"] }}i0" ether type arp arp saddr ip != {{ hostvars[host]["ansible_host"] }} drop
 {% endfor %}
 
+{% if use_strata %}
+        # La passerelle n accepte que l API (TCP/{{ gateway_port }}) depuis l agent
+        ip saddr { {{ agent_ips | join(', ') }} } ip daddr {{ gw_ip }} tcp dport {{ gateway_port }} accept
+        # Réponses du serveur de journaux à la passerelle (syslog TCP)
+        ip saddr {{ logging_ip }} ip daddr {{ gw_ip }} tcp sport 514 tcp flags & (syn | ack) != syn accept
+        ip daddr {{ gw_ip }} limit rate 10/minute log prefix "LAB-REJECT-GATEWAY "
+        ip daddr {{ gw_ip }} drop
+        # Et elle ne parle à personne d autre sur vmbr3 : réponses de l API et syslog seulement
+        iifname "{{ gw_tap }}i0" ip daddr != {{ logging_ip }} tcp sport {{ gateway_port }} tcp flags & (syn | ack) != syn accept
+        iifname "{{ gw_tap }}i0" ether type ip ip daddr != {{ logging_ip }} drop
+
+{% endif %}
         # Le serveur de journaux n accepte que syslog TCP/514 depuis les autres VM du bridge
         ip daddr {{ logging_ip }} tcp dport 514 accept
         ether type ip ip daddr {{ logging_ip }} ct state established,related accept

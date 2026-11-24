@@ -6,6 +6,7 @@ hermes_agent_install_url: "https://hermes-agent.nousresearch.com/install.sh"
 hermes_agent_install_flags: "--non-interactive --skip-browser --skip-computer-use"
 hermes_agent_model: "{{ llm_model_name }}"
 hermes_agent_base_url: "http://127.0.0.1:{{ llama_port }}/v1"
+hermes_agent_api_key: ""
 hermes_agent_context: 65536
 # manual = Hermes demande l'accord pour chaque commande jugée dangereuse
 hermes_agent_approvals: manual

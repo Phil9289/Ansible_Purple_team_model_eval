@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+# Bridge backend : relie SEULEMENT la passerelle (VM {{ hostvars[groups['llm_gateway'][0]]['vmid'] }})
+# et Strata (LXC {{ strata_ctid }}). Aucune adresse IP sur l'hôte : il ne route rien ici.
+auto {{ lab_backend_bridge }}
+iface {{ lab_backend_bridge }} inet manual
+    bridge-ports none
+    bridge-stp off
+    bridge-fd 0

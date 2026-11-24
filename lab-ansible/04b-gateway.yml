@@ -1,0 +1,9 @@
+---
+# Passerelle LLM : seul chemin entre l'agent (vmbr3) et Strata (vmbr4).
+# Ne fait rien si llm_backend vaut local.
+- name: Déployer la passerelle vers Strata
+  hosts: llm_gateway
+  become: true
+  roles:
+    - role: strata_gateway
+      when: llm_backend == 'strata'

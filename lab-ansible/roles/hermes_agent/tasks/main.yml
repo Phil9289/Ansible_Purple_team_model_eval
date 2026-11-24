@@ -11,10 +11,11 @@
   ansible.builtin.assert:
     that:
       - hermes_agent_context | int >= 64000
-      - llama_ctx_size | int >= hermes_agent_context | int
+      - agent_engine_context | int >= hermes_agent_context | int
     fail_msg: >-
-      Hermes Agent exige au moins 64 000 tokens de contexte. llama_ctx_size={{ llama_ctx_size }},
-      hermes_agent_context={{ hermes_agent_context }}.
+      Hermes Agent exige au moins 64 000 tokens de contexte. Moteur {{ llm_backend }} :
+      {{ agent_engine_context }} tokens, hermes_agent_context={{ hermes_agent_context }}.
+      Avec Strata, lancer le profil 64k et mettre strata_context: 65536.
 
 - name: Installer les prérequis de l'installateur (git, curl, tar, libatomic pour Node.js)
   ansible.builtin.apt:
@@ -103,6 +104,28 @@
     mode: "0600"
   notify: Vérifier Hermes Agent
 
+- name: Vérifier que la passerelle répond et que Strata est allumé (moteur strata)
+  ansible.builtin.uri:
+    url: "{{ hermes_agent_base_url | regex_replace('/v1$', '') }}/health"
+    status_code: 200
+    timeout: 10
+  register: gw_health_agent
+  failed_when: gw_health_agent.status != 200
+  when: llm_backend | default('local') == 'strata'
+
+- name: Vérifier la clé API et le modèle annoncé par la passerelle
+  ansible.builtin.uri:
+    url: "{{ hermes_agent_base_url }}/models"
+    headers:
+      Authorization: "Bearer {{ hermes_agent_api_key }}"
+    return_content: true
+  register: gw_models
+  failed_when: >-
+    gw_models.status != 200
+    or (gw_models.json.data | map(attribute='id') | list) != [hermes_agent_model]
+  no_log: true
+  when: llm_backend | default('local') == 'strata'
+
 - name: Vérifier que llama-server expose un gabarit de chat (option --jinja)
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ llama_port }}/props"
@@ -115,6 +138,7 @@
   retries: 20
   delay: 6
   until: llama_props.status == 200
+  when: llm_backend | default('local') == 'local'
 
 - name: Afficher la version de Hermes Agent
   ansible.builtin.command:
@@ -141,7 +165,7 @@
   register: hermes_ping
   changed_when: false
   failed_when: "'HERMES_OK' not in hermes_ping.stdout"
-  timeout: 1200   # premier prompt long : Vulkan traite ~20 tokens/s sur la P100
+  timeout: 1200   # premier prompt long (~7 000 tokens) : Vulkan ~20 tok/s, Strata ~300 tok/s
 
 - name: Résumé
   ansible.builtin.debug:

@@ -1,0 +1,79 @@
+---
+# Passerelle entre l'agent (vmbr3) et Strata (vmbr4). Python standard seulement :
+# rien à télécharger, donc le rôle marche aussi en mode isolated.
+- name: Vérifier que la clé API de la passerelle est assez longue
+  ansible.builtin.assert:
+    that: strata_gateway_api_key | length >= 20
+    fail_msg: "strata_gateway_api_key doit faire au moins 20 caractères."
+  no_log: true
+
+- name: Créer l'utilisateur système de la passerelle (sans shell, sans sudo)
+  ansible.builtin.user:
+    name: "{{ gateway_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Créer les dossiers du programme et de la configuration
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ gateway_dir }}", mode: "0755" }
+    - { path: "{{ gateway_conf_dir }}", mode: "0750" }
+
+- name: Déployer le programme de la passerelle (lecture seule pour son utilisateur)
+  ansible.builtin.copy:
+    src: strata_gateway.py
+    dest: "{{ gateway_dir }}/strata_gateway.py"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Redémarrer strata-gateway
+
+- name: Déployer la configuration (contient la clé API)
+  ansible.builtin.template:
+    src: gateway.env.j2
+    dest: "{{ gateway_conf_dir }}/gateway.env"
+    owner: root
+    group: "{{ gateway_user }}"
+    mode: "0640"
+  no_log: true
+  notify: Redémarrer strata-gateway
+
+- name: Déployer le service systemd durci
+  ansible.builtin.template:
+    src: strata-gateway.service.j2
+    dest: /etc/systemd/system/strata-gateway.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Redémarrer strata-gateway
+
+- name: Activer et démarrer la passerelle
+  ansible.builtin.systemd:
+    name: strata-gateway
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Appliquer tout de suite un éventuel redémarrage
+  ansible.builtin.meta: flush_handlers
+
+- name: Vérifier que la passerelle répond (et voit Strata si elle est allumée)
+  ansible.builtin.uri:
+    url: "http://{{ gateway_listen_host }}:{{ gateway_port }}/health"
+    status_code: [200, 503]
+  register: gw_health
+  retries: 10
+  delay: 3
+  until: gw_health.status in [200, 503]
+
+- name: Résumé
+  ansible.builtin.debug:
+    msg:
+      - "Passerelle : http://{{ gateway_listen_host }}:{{ gateway_port }}/v1 -> {{ strata_backend_ip }}:{{ strata_port }}"
+      - "Strata : {{ gw_health.json.strata | default('?') }} (503 = Strata éteint ou non branché sur {{ lab_backend_bridge }})"

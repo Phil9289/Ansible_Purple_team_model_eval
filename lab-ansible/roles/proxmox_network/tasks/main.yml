@@ -10,6 +10,14 @@
     mode: "0644"
   notify: activer le bridge du lab
 
+- name: Créer le bridge backend passerelle <-> Strata (vmbr4, sans IP sur l'hôte)
+  ansible.builtin.template:
+    src: vmbr4-backend.j2
+    dest: /etc/network/interfaces.d/vmbr4-backend
+    mode: "0644"
+  when: llm_backend == 'strata'
+  notify: activer le bridge backend
+
 - name: Activer le routage IPv4 (nécessaire pour le NAT et le SSH du contrôle)
   ansible.posix.sysctl:
     name: net.ipv4.ip_forward

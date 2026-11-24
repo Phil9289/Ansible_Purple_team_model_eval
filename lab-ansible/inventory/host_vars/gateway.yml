@@ -1,0 +1,7 @@
+# --- Ressources de la VM passerelle (lues par le role proxmox_vms) ---
+vmid: 304
+vcpu: 2
+ram_mb: 1024
+disk_gb: 20
+# Deuxième carte réseau, sur le bridge backend vers Strata (pas de passerelle par défaut)
+backend_ip: 10.40.0.40

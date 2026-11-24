@@ -1,0 +1,6 @@
+# Surcharges de la SIMULATION seulement (copiées dans inventory/group_vars/all/ par lab-sim.sh).
+# Chaque « machine » du labo est un espace de noms réseau Linux sur la même machine.
+lab_mode: isolated                 # état final visé : aucun accès Internet depuis le labo
+strata_lan_probe_ip: "192.168.1.42"
+ansible_connection: local
+vault_proxmox_api_host: "simulation"
