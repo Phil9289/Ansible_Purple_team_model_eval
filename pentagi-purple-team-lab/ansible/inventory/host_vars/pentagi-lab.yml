@@ -1,0 +1,14 @@
+---
+# Variables propres à l'hôte "pentagi-lab".
+# Copie/adapte ce fichier si tu renommes l'hôte dans hosts.ini.
+
+# Clé privée SSH pour atteindre cette VM (ou passe --private-key en ligne de commande)
+ansible_ssh_private_key_file: ~/.ssh/pentagi_lab_ed25519
+
+# Interface réseau de cette VM (vérifie avec: ip -o -4 addr)
+lab_primary_iface: eth0
+
+# Faut-il autoriser l'accès à l'UI depuis le LAN ?
+#  - false (défaut)  : UI sur 127.0.0.1, accès par tunnel SSH uniquement (recommandé)
+#  - true            : UI exposée sur l'IP de la VM (ouvre alors 8443 au pare-feu)
+expose_ui_on_lan: false

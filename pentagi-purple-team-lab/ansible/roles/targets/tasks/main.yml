@@ -1,0 +1,52 @@
+---
+# Rôle targets : valide le champ de tir APRÈS déploiement.
+#   - le réseau pentagi-range existe et est bien 'internal' (isolé)
+#   - les deux cibles répondent DEPUIS l'intérieur du réseau isolé
+# (Le déploiement lui-même est fait par le rôle pentagi via docker compose.)
+
+- name: Lire l'état du réseau isolé
+  community.docker.docker_network_info:
+    name: "{{ range_network_name }}"
+  register: range_net
+
+- name: Vérifier que le réseau du champ de tir est isolé (internal=true)
+  ansible.builtin.assert:
+    that:
+      - range_net.exists
+      - range_net.network.Internal | bool
+    fail_msg: >-
+      ALERTE ISOLATION : le réseau {{ range_network_name }} n'existe pas ou n'est
+      pas 'internal'. Les cibles/agents pourraient atteindre le LAN. Vérifie
+      docker-compose.range.yml (internal: true) puis relance.
+    success_msg: "Réseau {{ range_network_name }} isolé (internal=true) — OK."
+
+- name: Tester l'atteignabilité des cibles depuis l'intérieur du réseau isolé
+  community.docker.docker_container:
+    name: "lab-reach-check"
+    image: "curlimages/curl:8.11.1"
+    networks:
+      - name: "{{ range_network_name }}"
+    command: >-
+      -sS -o /dev/null -m 5
+      http://{{ item.host }}:{{ item.port }}/
+    detach: false
+    cleanup: true
+    auto_remove: true
+  register: reach
+  changed_when: false
+  failed_when: false
+  loop:
+    - { host: "juice-shop", port: 3000 }
+    - { host: "dvwa", port: 80 }
+  loop_control:
+    label: "{{ item.host }}:{{ item.port }}"
+
+- name: Rapport d'atteignabilité des cibles
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.item.host }}:{{ item.item.port }} ->
+      {{ 'ATTEIGNABLE' if (item.container is defined and item.container.State is defined
+         and (item.container.State.ExitCode | default(1)) == 0) else 'pas prête (laisse quelques secondes)' }}
+  loop: "{{ reach.results }}"
+  loop_control:
+    label: "{{ item.item.host }}"

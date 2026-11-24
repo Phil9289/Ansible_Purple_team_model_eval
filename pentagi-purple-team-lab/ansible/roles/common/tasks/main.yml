@@ -1,0 +1,33 @@
+---
+# Rôle common : paquets de base et réglages système pour l'hôte du labo.
+
+- name: Mettre à jour le cache APT
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Installer les paquets de base
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - jq
+      - nftables
+      - python3-pip
+      - rsync
+    state: present
+
+- name: Activer et démarrer nftables
+  ansible.builtin.systemd:
+    name: nftables
+    enabled: true
+    state: started
+
+- name: Créer le répertoire de base du labo
+  ansible.builtin.file:
+    path: "{{ lab_base_dir }}"
+    state: directory
+    owner: "{{ lab_user }}"
+    group: "{{ lab_user }}"
+    mode: "0750"

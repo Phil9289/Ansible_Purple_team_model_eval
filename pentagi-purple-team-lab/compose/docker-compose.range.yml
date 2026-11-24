@@ -1,0 +1,74 @@
+# =============================================================================
+#  PentAGI Purple Team Lab — champ de tir isolé (cibles vulnérables)
+# =============================================================================
+#  Ce fichier est un OVERLAY de compose/docker-compose.pentagi.yml (le stack
+#  officiel PentAGI, non modifié). On le lance toujours EN PLUS :
+#
+#     docker compose \
+#        -f compose/docker-compose.pentagi.yml \
+#        -f compose/docker-compose.range.yml \
+#        up -d
+#
+#  Il ajoute :
+#    1. Un réseau Docker ISOLÉ "pentagi-range" (internal: true -> aucune
+#       passerelle, donc aucun accès au LAN de l'hôte ni à Internet).
+#    2. Deux cibles délibérément vulnérables branchées sur ce réseau.
+#
+#  Le backend PentAGI attache SES conteneurs bac-à-sable (les agents qui
+#  exécutent nmap, etc.) à ce même réseau via la variable DOCKER_NETWORK
+#  (= "pentagi-range" dans le .env). Résultat : les agents voient les cibles
+#  par leur nom ou leur IP, mais ne peuvent pas voir ton réseau maison.
+#
+#  Les images sont téléchargées par le démon Docker de l'hôte (qui, lui, a
+#  Internet). Le fait que le réseau soit "internal" n'empêche PAS le pull ;
+#  il empêche seulement le trafic SORTANT des conteneurs une fois lancés.
+# =============================================================================
+
+networks:
+  pentagi-range:
+    name: pentagi-range
+    driver: bridge
+    internal: true          # <-- clé de l'isolation : pas de route vers l'extérieur
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+services:
+
+  # --- Cible 1 : application web moderne (OWASP Juice Shop) --------------------
+  # Vulnérabilités OWASP Top 10 réalistes (injection, XSS, auth cassée, etc.).
+  # Écoute sur 3000/tcp à l'intérieur du réseau isolé.
+  juice-shop:
+    image: ${JUICE_SHOP_IMAGE:-bkimminich/juice-shop:v19.0.0}
+    container_name: lab-juice-shop
+    hostname: juice-shop
+    restart: unless-stopped
+    networks:
+      pentagi-range:
+        ipv4_address: 172.30.0.10
+    # Volontairement PAS de ports: exposés vers l'hôte -> la cible n'est
+    # accessible QUE depuis l'intérieur du réseau isolé (donc depuis les
+    # agents PentAGI). Pour y jeter un oeil toi-même, voir scripts/range-peek.sh
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  # --- Cible 2 : application web classique (DVWA) -----------------------------
+  # Damn Vulnerable Web Application : SQLi, command injection, file upload,
+  # CSRF... avec niveaux de difficulté réglables. Écoute sur 80/tcp.
+  dvwa:
+    image: ${DVWA_IMAGE:-ghcr.io/digininja/dvwa:latest}
+    container_name: lab-dvwa
+    hostname: dvwa
+    restart: unless-stopped
+    environment:
+      # Base de données interne au conteneur (pas de secret réel)
+      - DB_SERVER=127.0.0.1
+    networks:
+      pentagi-range:
+        ipv4_address: 172.30.0.20
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"

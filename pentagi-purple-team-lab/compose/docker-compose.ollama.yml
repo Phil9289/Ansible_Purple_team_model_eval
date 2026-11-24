@@ -1,0 +1,53 @@
+# =============================================================================
+#  Overlay OPTIONNEL — cerveau LLM 100 % hors-ligne via Ollama (Option C)
+# =============================================================================
+#  Ajoute un service Ollama sur le réseau "core" de PentAGI (pentagi-network),
+#  pour que le backend puisse l'appeler. Activé par :
+#
+#     ./scripts/lab-up.sh --with-ollama
+#
+#  Puis, dans .env, utilise l'Option C :
+#     OLLAMA_SERVER_URL=http://ollama:11434
+#     OLLAMA_SERVER_MODEL=qwen2.5-coder:7b
+#     OLLAMA_SERVER_PULL_MODELS_ENABLED=true
+#
+#  GPU : décommente le bloc "deploy" si l'hôte a un GPU NVIDIA + le
+#  nvidia-container-toolkit (voir docs/03 §C). Sans GPU, le modèle tourne sur
+#  CPU (lent mais fonctionnel pour une démonstration).
+# =============================================================================
+
+networks:
+  pentagi-network:
+    external: true
+    name: pentagi-network
+
+volumes:
+  lab-ollama:
+    driver: local
+
+services:
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.12.3}
+    container_name: lab-ollama
+    hostname: ollama
+    restart: unless-stopped
+    networks:
+      - pentagi-network
+    volumes:
+      - lab-ollama:/root/.ollama
+    # Le backend l'atteint par http://ollama:11434 sur le réseau interne.
+    # On n'expose PAS le port vers l'hôte (reste privé au stack).
+    environment:
+      - OLLAMA_KEEP_ALIVE=30m
+    logging:
+      options:
+        max-size: 20m
+        max-file: "3"
+    # --- GPU NVIDIA (optionnel) ------------------------------------------------
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
