@@ -3,7 +3,7 @@
   ansible.builtin.apt:
     name: nginx
     state: present
-    update_cache: true
+    update_cache: "{{ apt_update_cache | default(true) | bool }}"
     cache_valid_time: 3600
 
 - name: Déployer le site volontairement mal configuré (listage de répertoire activé)

@@ -8,6 +8,9 @@
     target_port: "{{ hostvars[groups['web'][0]]['nginx_listen_port'] }}"
     logs_ip: "{{ hostvars[groups['logs'][0]]['ansible_host'] }}"
     pve_ip: "{{ hostvars[groups['proxmox_host'][0]]['ansible_host'] }}"
+    use_strata: "{{ llm_backend | default('local') == 'strata' }}"
+    gw_url: "http://{{ hostvars[groups['llm_gateway'][0]]['ansible_host'] }}:{{ gateway_port }}"
+    strata_lan_ip: "{{ strata_lan_probe_ip | default('192.168.1.42') }}"
   tasks:
     # --- Tests Positifs (Flux autorisés indispensables au fonctionnement) ---
     - name: "[POSITIF] 1. Vérifier l'accès HTTP à la cible vulnérable ({{ target_ip }}:{{ target_port }})"
@@ -24,13 +27,74 @@
       register: test_logs
       changed_when: false
 
-    - name: "[POSITIF] 3. Vérifier la santé du moteur d'inférence LLM local (127.0.0.1:{{ llama_port }})"
+    - name: "[POSITIF] 3. Vérifier la santé du moteur LLM ({{ 'passerelle -> Strata' if use_strata else 'llama-server local' }})"
       ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ llama_port }}/health"
+        url: "{{ (gw_url ~ '/health') if use_strata else ('http://127.0.0.1:' ~ llama_port ~ '/health') }}"
         method: GET
         status_code: 200
-        timeout: 5
+        timeout: 10
       register: test_llm
+
+    - name: "[POSITIF] 3b. Une vraie réponse de Strata par la passerelle, avec la clé"
+      ansible.builtin.uri:
+        url: "{{ gw_url }}/v1/chat/completions"
+        method: POST
+        body_format: json
+        body:
+          model: "ignoré-par-la-passerelle"
+          messages: [{role: user, content: "Réponds seulement : VERIFY_OK"}]
+          max_tokens: 1024
+          temperature: 0
+        headers:
+          Authorization: "Bearer {{ agent_llm_api_key }}"
+        timeout: 600
+        return_content: true
+      register: test_chat
+      no_log: true
+      when: use_strata | bool
+
+    # --- Tests négatifs propres à la passerelle (doivent être REFUSÉS) ---
+    - name: "[NÉGATIF] G1. Passerelle sans clé API — DOIT répondre 401"
+      ansible.builtin.uri:
+        url: "{{ gw_url }}/v1/models"
+        status_code: 401
+      register: test_gw_nokey
+      when: use_strata | bool
+
+    - name: "[NÉGATIF] G2. Interface web / admin de Strata via la passerelle — DOIT répondre 404"
+      ansible.builtin.uri:
+        url: "{{ gw_url }}/{{ item }}"
+        status_code: 404
+        headers:
+          Authorization: "Bearer {{ agent_llm_api_key }}"
+      loop: ["", "api/models/delete", "v1/completions", "props", "slots"]
+      no_log: true
+      register: test_gw_routes
+      when: use_strata | bool
+
+    - name: "[NÉGATIF] G3. Strata en direct sur le backend ({{ strata_backend_ip }}:{{ strata_port }}) — DOIT ÊTRE INJOIGNABLE"
+      ansible.builtin.command:
+        cmd: "curl -s -m 3 http://{{ strata_backend_ip }}:{{ strata_port }}/v1/models"
+      register: test_strata_backend
+      changed_when: false
+      ignore_errors: true
+      when: use_strata | bool
+
+    - name: "[NÉGATIF] G4. Strata sur le réseau maison ({{ strata_lan_ip }}:{{ strata_port }}) — DOIT ÊTRE REJETÉ"
+      ansible.builtin.command:
+        cmd: "curl -s -m 3 http://{{ strata_lan_ip }}:{{ strata_port }}/v1/models"
+      register: test_strata_lan
+      changed_when: false
+      ignore_errors: true
+      when: use_strata | bool
+
+    - name: "[NÉGATIF] G5. SSH de l'agent vers la passerelle — DOIT ÊTRE BLOQUÉ"
+      ansible.builtin.command:
+        cmd: "nc -z -w 3 {{ hostvars[groups['llm_gateway'][0]]['ansible_host'] }} 22"
+      register: test_ssh_gw
+      changed_when: false
+      ignore_errors: true
+      when: use_strata | bool
 
     # --- Tests Négatifs (Flux interdits qui DOIVENT échouer en mode isolé) ---
     - name: "[NÉGATIF] 4. Tester l'accès à Internet ({{ lab_internet_probe_ip }}) — DOIT ÊTRE REJETÉ"
@@ -72,5 +136,51 @@
           - test_lan.rc != 0
           - test_pve.rc != 0
           - test_ssh_logs.rc != 0
+          - not (use_strata | bool) or ('VERIFY_OK' in (test_chat.json.choices[0].message.content | default('')))
+          - not (use_strata | bool) or test_strata_backend.rc != 0
+          - not (use_strata | bool) or test_strata_lan.rc != 0
+          - not (use_strata | bool) or test_ssh_gw.rc != 0
         success_msg: "SUCCÈS TOTAL : Tous les flux autorisés sont opérationnels et tous les flux interdits sont strictement bloqués par nftables !"
         fail_msg: "ALERTE SÉCURITÉ : Un flux interdit n'a pas été rejeté comme prévu."
+
+# --- Côté passerelle : elle ne doit joindre QUE Strata (et le serveur de journaux) ---
+- name: Validation de l'isolation de la passerelle
+  hosts: llm_gateway
+  gather_facts: false
+  vars:
+    pve_ip: "{{ hostvars[groups['proxmox_host'][0]]['ansible_host'] }}"
+    agent_ip: "{{ hostvars[groups['attacker'][0]]['ansible_host'] }}"
+    strata_lan_ip: "{{ strata_lan_probe_ip | default('192.168.1.42') }}"
+  tasks:
+    - name: Rien à vérifier si le moteur est local
+      ansible.builtin.meta: end_play
+      when: llm_backend | default('local') != 'strata'
+
+    - name: "[POSITIF] P1. La passerelle joint Strata sur le backend"
+      ansible.builtin.uri:
+        url: "http://{{ strata_backend_ip }}:{{ strata_port }}/v1/models"
+        headers:
+          Authorization: "Bearer {{ strata_upstream_key }}"
+        timeout: 10
+      register: gw_to_strata
+
+    - name: "[NÉGATIF] P2-P5. Internet, LAN, Strata via vmbr0, SSH vers l'agent — DOIVENT ÉCHOUER"
+      ansible.builtin.command:
+        cmd: "{{ item }}"
+      loop:
+        - "curl -s -m 3 http://{{ lab_internet_probe_ip }}"
+        - "curl -s -m 3 http://{{ lab_lan_probe_ip }}"
+        - "curl -s -m 3 http://{{ strata_lan_ip }}:{{ strata_port }}/v1/models"
+        - "curl -k -s -m 3 https://{{ pve_ip }}:8006"
+        - "nc -z -w 3 {{ agent_ip }} 22"
+      register: gw_negative
+      changed_when: false
+      failed_when: false
+
+    - name: Vérifier l'isolation de la passerelle
+      ansible.builtin.assert:
+        that:
+          - gw_to_strata.status == 200
+          - gw_negative.results | selectattr('rc', 'equalto', 0) | list | length == 0
+        success_msg: "PASSERELLE CONFORME : elle ne joint que Strata (backend) et le serveur de journaux."
+        fail_msg: "ALERTE : la passerelle joint autre chose que Strata."

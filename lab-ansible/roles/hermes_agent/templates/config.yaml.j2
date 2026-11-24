@@ -4,11 +4,15 @@
 {{ hermes_config_version.stdout | default('') }}
 
 model:
-  provider: custom                      # tout serveur compatible OpenAI (llama.cpp)
+  provider: custom                      # tout serveur compatible OpenAI (llama.cpp ou passerelle Strata)
   base_url: "{{ hermes_agent_base_url }}"
   default: "{{ hermes_agent_model }}"
   context_length: {{ hermes_agent_context }}
+{% if hermes_agent_api_key | length > 0 %}
+  api_key: "{{ hermes_agent_api_key }}"   # clé de la passerelle Strata (fichier en 0600)
+{% else %}
   # Pas d'api_key : le llama-server local n'a pas d'authentification.
+{% endif %}
 
 # Tâches secondaires (compression, titres) : le même LLM local, jamais OpenRouter
 auxiliary:

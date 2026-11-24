@@ -1,0 +1,6 @@
+---
+- name: Redémarrer strata-gateway
+  ansible.builtin.systemd:
+    name: strata-gateway
+    state: restarted
+    daemon_reload: true

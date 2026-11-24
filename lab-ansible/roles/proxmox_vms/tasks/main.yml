@@ -60,10 +60,15 @@
     name: "{{ item }}"
     cores: "{{ hostvars[item]['vcpu'] }}"
     memory: "{{ hostvars[item]['ram_mb'] }}"
-    net:
-      net0: "virtio,bridge={{ lab_bridge }},firewall=0"
-    ipconfig:
-      ipconfig0: "ip={{ hostvars[item]['ansible_host'] }}/24,gw={{ lab_gateway }}"
+    # La passerelle a une 2e carte sur le bridge backend (vers Strata), sans passerelle par défaut
+    net: >-
+      {{ {'net0': 'virtio,bridge=' ~ lab_bridge ~ ',firewall=0'}
+         | combine({'net1': 'virtio,bridge=' ~ lab_backend_bridge ~ ',firewall=0'}
+                   if hostvars[item]['backend_ip'] is defined else {}) }}
+    ipconfig: >-
+      {{ {'ipconfig0': 'ip=' ~ hostvars[item]['ansible_host'] ~ '/24,gw=' ~ lab_gateway}
+         | combine({'ipconfig1': 'ip=' ~ hostvars[item]['backend_ip'] ~ '/24'}
+                   if hostvars[item]['backend_ip'] is defined else {}) }}
     nameservers:
       - "{{ lab_dns }}"
     ciuser: "{{ ansible_svc_user }}"
@@ -122,6 +127,39 @@
       ("mapping=" ~ gpu_pci_mapping) not in agent_qm_config.stdout
       or ("hookscript: " ~ gpu_hookscript) not in agent_qm_config.stdout
       or "machine: q35" not in agent_qm_config.stdout
+
+# --- Moteur Strata : la VM agent n'a plus de GPU, la P100 reste aux conteneurs ---
+- name: Lire la configuration de la VM agent (retrait éventuel de la P100)
+  ansible.builtin.command: "qm config {{ hostvars[groups['attacker'][0]]['vmid'] }}"
+  register: agent_qm_config_nogpu
+  changed_when: false
+  delegate_to: "{{ groups['proxmox_host'][0] }}"
+  connection: ssh
+  when: not (gpu_passthrough | bool)
+
+- name: Retirer la P100 et le hookscript de la VM agent (VM éteinte seulement)
+  ansible.builtin.command: >-
+    qm set {{ hostvars[groups['attacker'][0]]['vmid'] }} --delete hostpci0,hookscript
+  delegate_to: "{{ groups['proxmox_host'][0] }}"
+  connection: ssh
+  when:
+    - not (gpu_passthrough | bool)
+    - groups['attacker'][0] not in running_vms
+    - "'hostpci0:' in agent_qm_config_nogpu.stdout or 'hookscript:' in agent_qm_config_nogpu.stdout"
+
+- name: Avertir si la VM agent tourne encore avec la P100
+  ansible.builtin.debug:
+    msg: >-
+      La VM agent est allumée avec la P100 : éteins-la (qm shutdown {{ hostvars[groups['attacker'][0]]['vmid'] }}),
+      puis relance 01-infra.yml pour retirer la carte, et tape p100-retour-conteneurs sur le Proxmox.
+  when:
+    - not (gpu_passthrough | bool)
+    - groups['attacker'][0] in running_vms
+    - "'hostpci0:' in agent_qm_config_nogpu.stdout"
+
+- name: Brancher Strata (LXC) sur le bridge backend
+  ansible.builtin.import_tasks: strata_backend.yml
+  when: llm_backend == 'strata'
 
 - name: Démarrer chaque VM du lab
   community.proxmox.proxmox_kvm:

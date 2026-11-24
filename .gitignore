@@ -59,3 +59,9 @@ Thumbs.db
 # --- Labo ---
 exports/
 *.avant-*
+
+# --- Secrets générés sur le contrôleur (clé de la passerelle Strata) ---
+.secrets/
+# Simulation : fichiers générés par simulation/lab-sim.sh
+simulation/run/
+simulation/inventory/

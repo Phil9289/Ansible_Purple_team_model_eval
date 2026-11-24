@@ -1,0 +1,16 @@
+---
+# Valeurs par défaut du rôle strata_gateway (surchargées dans l'inventaire).
+gateway_user: strata-gw
+gateway_dir: /opt/strata-gateway
+gateway_conf_dir: /etc/strata-gateway
+gateway_listen_host: "{{ ansible_host }}"     # patte vmbr3 seulement, jamais 0.0.0.0
+gateway_port: 8000
+gateway_syslog_address: /dev/log             # rsyslog local -> serveur de journaux (rôle common)
+gateway_queue_max: 4
+gateway_queue_timeout: 900
+gateway_rate_per_minute: 30
+gateway_cooldown_seconds: 0
+gateway_default_max_tokens: 4096
+gateway_max_tokens_cap: 8192
+gateway_max_body_bytes: 1048576
+gateway_log_prompt_preview: 0                # 0 = jamais de texte du prompt dans les journaux

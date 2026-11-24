@@ -1,0 +1,32 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Passerelle LLM du labo (agent -> Strata, filtrée et journalisée)
+After=network-online.target rsyslog.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ gateway_user }}
+Group={{ gateway_user }}
+EnvironmentFile={{ gateway_conf_dir }}/gateway.env
+ExecStart=/usr/bin/python3 -I {{ gateway_dir }}/strata_gateway.py
+Restart=on-failure
+RestartSec=3s
+# Durcissement : la passerelle n'a besoin que du réseau et de /dev/log.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
