@@ -1,0 +1,21 @@
+---
+# Profil « gpu-loue » : un GPU loué fait tourner vLLM (modèle sans filtre de refus),
+# joint par la passerelle à travers un tunnel. Aucun port public sur le GPU.
+# Minuterie d'autodestruction obligatoire (gpu_duree_max).
+llm_profile: gpu-loue
+llm_route: gpu
+llm_egress: gpu
+llm_gateway_enabled: true
+
+llm_gateway_url: "http://{{ hostvars[groups['gateways'][0]]['ansible_host'] }}:{{ litellm_port }}/v1"
+
+agent_model: "gpu-main"
+agent_context: 65536
+
+# --- Location du GPU (voir roles/gpu_rental) ---
+# Fournisseur à choisir : runpod | vastai | modal. Non figé tant que phil n'a pas tranché.
+gpu_provider: runpod
+gpu_model_repo: "cognitivecomputations/WhiteRabbitNeo-V3-7B"   # exemple, modèle sans refus
+gpu_vllm_image: "vllm/vllm-openai:v0.6.6"                      # image déjà compilée (rien à compiler)
+gpu_duree_max: 3600        # secondes : la machine s'autodétruit au bout d'1 h
+gpu_credit_max_usd: 10     # rappel : mettre un plafond prépayé chez le fournisseur

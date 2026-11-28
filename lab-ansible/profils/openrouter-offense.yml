@@ -1,0 +1,23 @@
+---
+# Profil « openrouter-offense » : cerveau distant via la passerelle LiteLLM.
+# Mélange conseillé (budget 1-5 $ / M tokens), un modèle par rôle d'agent.
+# La clé OpenRouter reste SUR LA PASSERELLE, jamais dans la VM agent.
+llm_profile: openrouter-offense
+llm_route: openrouter
+llm_egress: openrouter
+llm_gateway_enabled: true
+
+# L'agent parle à la passerelle (10.30.0.50), pas à Internet.
+llm_gateway_url: "http://{{ hostvars[groups['gateways'][0]]['ansible_host'] }}:{{ litellm_port }}/v1"
+
+# Modèle vu par l'agent = un alias défini dans la passerelle (litellm_models).
+# L'alias « offense-main » route vers DeepSeek V4 Flash (86 %, 0 refus mesuré).
+agent_model: "offense-main"
+agent_context: 131072
+
+# Routage des rôles PentAGI vers les alias de la passerelle (voir litellm_models).
+pentagi_role_models:
+  orchestrator: "offense-planner"   # DeepSeek V4 Pro
+  pentester: "offense-main"         # DeepSeek V4 Flash (le plus de tokens)
+  coder: "offense-coder"            # Kimi K2.6
+  judge: "offense-judge"            # GLM 5.2 (famille différente)

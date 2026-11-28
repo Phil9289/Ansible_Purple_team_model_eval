@@ -1,0 +1,20 @@
+---
+# Variables communes aux profils LLM (voir profils/ et roles/litellm_gateway).
+# Surchargées par le profil choisi avec « -e @profils/<profil>.yml ».
+
+# Par défaut, aucun profil n'est chargé : on reste en mode local (version déposée).
+llm_profile: local
+llm_route: local
+llm_egress: none
+llm_gateway_enabled: false
+
+# Port de la passerelle LiteLLM (repris dans host_vars/gateway.yml).
+litellm_port: 4000
+
+# Pare-feu : la passerelle peut-elle sortir, et vers quoi ?
+#   none       = isolation totale (défaut)
+#   openrouter = seule la VM passerelle joint openrouter.ai en TCP/443
+#   gpu        = seule la VM passerelle joint le fournisseur de GPU en TCP/443
+# Calculé à partir du profil ; l'IP vient de l'inventaire (groups['gateways']).
+llm_egress_enabled: "{{ llm_egress in ['openrouter', 'gpu'] }}"
+llm_gateway_ip: "{{ hostvars[groups['gateways'][0]]['ansible_host'] if groups['gateways'] | default([]) | length > 0 else '' }}"

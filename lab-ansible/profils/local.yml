@@ -1,0 +1,13 @@
+---
+# Profil « local » : le llama.cpp de la VM agent (P100), aucune clé, mode isolé.
+# C'est le comportement de la version déposée : rien ne sort du labo.
+llm_profile: local
+llm_route: local
+llm_egress: none
+
+# L'agent parle directement à son llama-server local (pas de passerelle).
+llm_gateway_url: "http://127.0.0.1:{{ llama_port }}/v1"
+llm_gateway_enabled: false
+
+agent_model: "{{ llm_model_name }}"
+agent_context: 65536

@@ -1,0 +1,25 @@
+---
+# Agent = Hermes Agent (Nous Research), approbation MANUELLE, outils minimaux.
+# Cerveau choisi par le profil : -e @profils/local.yml | openrouter-offense.yml | gpu-loue.yml
+#
+#   ansible-playbook agent-hermes.yml -e @profils/openrouter-offense.yml
+
+- import_playbook: 07-gateway.yml
+
+- name: Deployer Hermes (approbation manuelle) sur l'agent
+  hosts: attacker
+  become: true
+  vars_files:
+    - inventory/group_vars/all/vault.yml
+  vars:
+    # L'agent parle a la passerelle (ou au llama local en profil local).
+    # AUCUNE cle ici : la passerelle detient les cles.
+    hermes_agent_base_url: "{{ llm_gateway_url }}"
+    hermes_agent_model: "{{ agent_model }}"
+    hermes_agent_context: 65536
+    hermes_agent_approvals: manual
+    hermes_agent_toolsets: [terminal, file, todo, memory, skills]
+  roles:
+    - common
+    - agent_host
+    - hermes_agent

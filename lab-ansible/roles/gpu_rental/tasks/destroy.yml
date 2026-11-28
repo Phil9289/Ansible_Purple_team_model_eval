@@ -1,0 +1,17 @@
+---
+# Destruction du pod GPU loué. Sûr à relancer : si rien n'est loué, ne fait rien.
+
+# --- TODO fournisseur : supprimer le pod ---------------------------------
+# RunPod : DELETE https://rest.runpod.io/v1/pods/{id} (id gardé dans un fichier
+#   d'état, ex. {{ litellm_dir | default('/opt/litellm') }}/gpu-pod-id).
+# Vast.ai : `vastai destroy instance <id>`.
+- name: (TODO) Supprimer le pod GPU chez {{ gpu_provider | default('runpod') }}
+  ansible.builtin.debug:
+    msg: "À implémenter : appel API pour détruire le pod loué (si présent)."
+
+- name: Désarmer le minuteur d'autodestruction (plus rien à détruire)
+  ansible.builtin.systemd:
+    name: gpu-autodestruct.timer
+    state: stopped
+    enabled: false
+  failed_when: false

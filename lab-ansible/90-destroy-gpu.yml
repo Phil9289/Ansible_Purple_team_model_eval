@@ -1,0 +1,14 @@
+---
+# Détruit SEULEMENT le GPU loué (pas les VM du labo). Appelé à la main ou par le
+# minuteur systemd gpu-autodestruct.timer. Idempotent : ne rien faire si absent.
+
+- name: Détruire le GPU loué
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - inventory/group_vars/all/vault.yml
+  roles:
+    - role: gpu_rental
+      tasks_from: destroy
+  tags: gpu

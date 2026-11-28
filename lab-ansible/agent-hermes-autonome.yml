@@ -1,0 +1,25 @@
+---
+# Variante : Hermes en approbation SMART (ne demande que pour le vraiment risque)
+# et avec plus d'outils. A utiliser dans une VM jetable (snapshot avant/apres),
+# pour tester un moteur plus autonome. Meme cerveau choisi par le profil.
+#
+#   ansible-playbook agent-hermes-autonome.yml -e @profils/openrouter-offense.yml
+
+- import_playbook: 07-gateway.yml
+
+- name: Deployer Hermes (autonome, approbation smart) sur l'agent
+  hosts: attacker
+  become: true
+  vars_files:
+    - inventory/group_vars/all/vault.yml
+  vars:
+    hermes_agent_base_url: "{{ llm_gateway_url }}"
+    hermes_agent_model: "{{ agent_model }}"
+    hermes_agent_context: 65536
+    hermes_agent_approvals: smart
+    # Plus d'outils que le profil manuel (toujours ni web ni browser : labo isole).
+    hermes_agent_toolsets: [terminal, file, todo, memory, skills, planning]
+  roles:
+    - common
+    - agent_host
+    - hermes_agent
