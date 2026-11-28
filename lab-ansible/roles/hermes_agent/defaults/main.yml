@@ -4,6 +4,8 @@ hermes_agent_user: hermes
 hermes_agent_home: "/home/{{ hermes_agent_user }}"
 hermes_agent_install_url: "https://hermes-agent.nousresearch.com/install.sh"
 hermes_agent_install_flags: "--non-interactive --skip-browser --skip-computer-use"
+hermes_llm_profile: local
+hermes_agent_provider: custom
 hermes_agent_model: "{{ llm_model_name }}"
 hermes_agent_base_url: "http://127.0.0.1:{{ llama_port }}/v1"
 hermes_agent_context: 65536

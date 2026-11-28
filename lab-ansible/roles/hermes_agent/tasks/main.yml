@@ -11,7 +11,7 @@
   ansible.builtin.assert:
     that:
       - hermes_agent_context | int >= 64000
-      - llama_ctx_size | int >= hermes_agent_context | int
+      - hermes_llm_profile != 'local' or llama_ctx_size | int >= hermes_agent_context | int
     fail_msg: >-
       Hermes Agent exige au moins 64 000 tokens de contexte. llama_ctx_size={{ llama_ctx_size }},
       hermes_agent_context={{ hermes_agent_context }}.
@@ -94,16 +94,26 @@
     mode: "0600"
   notify: Vérifier Hermes Agent
 
-- name: Générer ~/.hermes/.env (secrets, vide car aucune clé API externe)
+- name: Refuser un profil externe sans clé dans le vault
+  ansible.builtin.assert:
+    that: hermes_agent_env.values() | select('equalto', '') | list | length == 0
+    fail_msg: >-
+      Le profil {{ hermes_llm_profile }} demande une clé API : l'ajouter avec
+      « ansible-vault edit inventory/group_vars/all/vault.yml ».
+  no_log: true
+
+- name: Générer ~/.hermes/.env (secrets du profil, vide avec le profil local)
   ansible.builtin.template:
     src: env.j2
     dest: "{{ hermes_agent_home }}/.hermes/.env"
     owner: "{{ hermes_agent_user }}"
     group: "{{ hermes_agent_user }}"
     mode: "0600"
+  no_log: true          # la clé ne doit jamais s'afficher, même avec --diff ou -v
   notify: Vérifier Hermes Agent
 
 - name: Vérifier que llama-server expose un gabarit de chat (option --jinja)
+  when: hermes_llm_profile == 'local'
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ llama_port }}/props"
     return_content: true
@@ -126,7 +136,7 @@
   register: hermes_version
   changed_when: false
 
-- name: Test de bout en bout — Hermes Agent répond via le LLM local
+- name: Test de bout en bout — Hermes Agent répond via le LLM du profil
   # Sortie dans un fichier : la passerelle lancée par Hermes ne retient plus Ansible
   ansible.builtin.shell:
     cmd: >-
