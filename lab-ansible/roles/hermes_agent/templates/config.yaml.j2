@@ -4,13 +4,14 @@
 {{ hermes_config_version.stdout | default('') }}
 
 model:
-  provider: custom                      # tout serveur compatible OpenAI (llama.cpp)
+  # Profil « {{ hermes_llm_profile }} » (hermes_llm_profiles dans host_vars/agent.yml)
+  provider: {{ hermes_agent_provider }}
   base_url: "{{ hermes_agent_base_url }}"
   default: "{{ hermes_agent_model }}"
   context_length: {{ hermes_agent_context }}
-  # Pas d'api_key : le llama-server local n'a pas d'authentification.
+  # Aucune clé ici : une clé éventuelle est dans ~/.hermes/.env (venue du vault).
 
-# Tâches secondaires (compression, titres) : le même LLM local, jamais OpenRouter
+# Tâches secondaires (compression, titres) : le même LLM que le profil choisi
 auxiliary:
   compression:
     provider: main

@@ -47,9 +47,31 @@ llama_extra_args: "{{ '-fa off' if gpu_passthrough | bool else '' }} --jinja -np
 
 # --- Hermes Agent (Nous Research) : rôle hermes_agent ---
 hermes_agent_user: hermes
-hermes_agent_model: "{{ llm_model_name }}"
-hermes_agent_base_url: "http://127.0.0.1:{{ llama_port }}/v1"   # pas de clé API
-hermes_agent_context: 65536
+# Cerveau de Hermes : UNE variable à changer (local | openrouter).
+#   ansible-playbook 05-agent.yml -e hermes_llm_profile=openrouter
+hermes_llm_profile: local
+# Chaque profil regroupe ses sous-variables. L'adresse, le modèle et le contexte
+# de Hermes en sont déduits plus bas : rien d'autre à modifier.
+hermes_llm_profiles:
+  local:                                   # llama-server dans la VM, aucune clé, marche en mode isolated
+    provider: custom
+    base_url: "http://127.0.0.1:{{ llama_port }}/v1"
+    model: "{{ llm_model_name }}"
+    context: 65536
+    env: {}
+  openrouter:                              # API externe : demande une sortie pare-feu vers openrouter.ai
+    provider: openrouter
+    base_url: "https://openrouter.ai/api/v1"
+    model: "qwen/qwen3-30b-a3b"            # nom OpenRouter (fournisseur/modèle)
+    context: 131072
+    env:
+      OPENROUTER_API_KEY: "{{ vault_openrouter_api_key | default('') }}"   # chiffrée dans vault.yml
+hermes_llm: "{{ hermes_llm_profiles[hermes_llm_profile] }}"
+hermes_agent_provider: "{{ hermes_llm.provider }}"
+hermes_agent_model: "{{ hermes_llm.model }}"
+hermes_agent_base_url: "{{ hermes_llm.base_url }}"
+hermes_agent_context: "{{ hermes_llm.context }}"
+hermes_agent_env: "{{ hermes_llm.env }}"
 hermes_agent_approvals: manual        # phil approuve chaque commande dangereuse
 hermes_agent_toolsets: [terminal, file, todo, memory, skills]   # ni web ni browser
 # Root seulement pour nmap (scans -O, -sS), choisi par phil le 22 nov 2026.
