@@ -1,0 +1,48 @@
+---
+# Tourne sur le contrôleur (localhost). Loue un GPU, lance vLLM, programme la
+# destruction. Les appels d'API dépendent du fournisseur : à compléter (TODO).
+
+- name: Garde-fou coût — ne rien louer sans confirmation explicite
+  ansible.builtin.assert:
+    that: gpu_rental_confirmed | bool
+    fail_msg: >-
+      Location refusée : relance avec « -e gpu_rental_confirmed=true » pour
+      accepter de payer. Vérifie d'abord le plafond prépayé ({{ gpu_credit_max_usd }} $).
+
+- name: Vérifier la présence de la clé du fournisseur
+  ansible.builtin.assert:
+    that: vault_gpu_rental_api_key | default('') | length > 0
+    fail_msg: "Clé {{ gpu_provider }} absente du vault (vault_gpu_rental_api_key)."
+  no_log: true
+
+# --- TODO fournisseur : créer le pod GPU ---------------------------------
+# RunPod : POST https://rest.runpod.io/v1/pods  (image gpu_vllm_image, gpu_gpu_type,
+#   variable MODEL=gpu_model_repo, ports exposés en privé seulement).
+# Vast.ai : CLI `vastai create instance ...`.
+# Le pod ne doit PAS exposer vLLM sur une IP publique : accès par tunnel seulement.
+- name: (TODO) Créer le pod GPU chez {{ gpu_provider }}
+  ansible.builtin.debug:
+    msg: "À implémenter : appel API {{ gpu_provider }} pour créer le pod {{ gpu_gpu_type }} avec {{ gpu_model_repo }}."
+
+# --- Autodestruction côté contrôleur -------------------------------------
+- name: Installer le minuteur systemd d'autodestruction ({{ gpu_duree_max }} s)
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/etc/systemd/system/{{ item.dest }}"
+    mode: "0644"
+  loop:
+    - { src: gpu-autodestruct.service.j2, dest: gpu-autodestruct.service }
+    - { src: gpu-autodestruct.timer.j2, dest: gpu-autodestruct.timer }
+
+- name: Armer le minuteur (destruction garantie même PC éteint côté phil)
+  ansible.builtin.systemd:
+    name: gpu-autodestruct.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Rappel
+  ansible.builtin.debug:
+    msg:
+      - "Minuteur armé : le GPU sera détruit dans {{ gpu_duree_max }} s au plus tard."
+      - "Destruction manuelle immédiate : ansible-playbook 90-destroy-gpu.yml"

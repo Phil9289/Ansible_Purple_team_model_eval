@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+services:
+  litellm:
+    image: {{ litellm_image }}
+    container_name: litellm
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--port", "{{ litellm_port }}"]
+    ports:
+      - "{{ litellm_port }}:{{ litellm_port }}"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro

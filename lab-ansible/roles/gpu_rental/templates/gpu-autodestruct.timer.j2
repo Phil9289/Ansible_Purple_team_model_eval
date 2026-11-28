@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Detruit le GPU loue au plus tard {{ gpu_duree_max }} s apres la creation
+
+[Timer]
+OnActiveSec={{ gpu_duree_max }}
+AccuracySec=30s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

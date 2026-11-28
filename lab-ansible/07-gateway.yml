@@ -1,0 +1,14 @@
+---
+# Déploie la passerelle LiteLLM sur la VM gateway. Ne fait rien avec le profil
+# local (aucun cerveau distant). Appelé par les playbooks agent-*.yml.
+
+- name: Déployer la passerelle LLM (LiteLLM)
+  hosts: gateways
+  become: true
+  vars_files:
+    - inventory/group_vars/all/vault.yml
+  roles:
+    - role: common
+      when: llm_gateway_enabled | default(false) | bool
+    - role: litellm_gateway
+      when: llm_gateway_enabled | default(false) | bool

@@ -1,0 +1,21 @@
+---
+# Rôle gpu_rental : loue un GPU chez un fournisseur, y lance vLLM (image déjà
+# compilée), ouvre un tunnel vers la passerelle, et programme l'autodestruction.
+#
+# SQUELETTE : les appels d'API sont à compléter une fois le fournisseur choisi.
+# Rien n'est lancé tant que gpu_rental_confirmed n'est pas true (sécurité coût).
+
+gpu_provider: runpod            # runpod | vastai | modal
+gpu_rental_confirmed: false     # passe à true seulement quand phil veut vraiment louer
+
+gpu_model_repo: "cognitivecomputations/WhiteRabbitNeo-V3-7B"
+gpu_vllm_image: "vllm/vllm-openai:v0.6.6"
+gpu_gpu_type: "NVIDIA L40S"     # 48 Go suffisent pour un 7B-35B en FP8/Q4
+gpu_vllm_port: 8000
+
+# Durée de vie maximale : la machine s'autodétruit au bout de ce délai.
+gpu_duree_max: 3600             # secondes (1 h)
+gpu_credit_max_usd: 10          # rappel : plafond prépayé à mettre chez le fournisseur
+
+# Où la passerelle joint le vLLM (bout local du tunnel SSH/WireGuard).
+gpu_tunnel_local_port: 18000

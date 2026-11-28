@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Autodestruction du GPU loue du labo (securite cout)
+
+[Service]
+Type=oneshot
+WorkingDirectory={{ playbook_dir | default('/root/lab-ansible') }}
+# Detruit le pop loue, quoi qu'il arrive. ANSIBLE_CONFIG herite du .bashrc.
+ExecStart=/usr/bin/ansible-playbook {{ playbook_dir | default('/root/lab-ansible') }}/90-destroy-gpu.yml

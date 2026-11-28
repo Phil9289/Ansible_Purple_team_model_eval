@@ -1,0 +1,37 @@
+---
+# Rôle litellm_gateway : installe LiteLLM (proxy OpenAI-compatible) dans la VM
+# passerelle. Un seul point d'entrée pour l'agent ; la passerelle détient les clés,
+# compte les tokens et route chaque alias vers le bon fournisseur.
+
+litellm_port: 4000
+litellm_dir: /opt/litellm
+litellm_image: "ghcr.io/berriai/litellm:main-stable"
+
+# Alias présentés à l'agent -> vrai modèle chez le fournisseur.
+# L'agent ne voit que la colonne « alias » ; la clé reste ici, pas chez lui.
+# provider = openrouter | gpu  (gpu = le vLLM du GPU loué, joint par le tunnel)
+litellm_models:
+  - alias: offense-main
+    provider: openrouter
+    model: "openrouter/deepseek/deepseek-v4-flash"     # 86 %, 0 refus mesuré (Cybench)
+  - alias: offense-planner
+    provider: openrouter
+    model: "openrouter/deepseek/deepseek-v4-pro"
+  - alias: offense-coder
+    provider: openrouter
+    model: "openrouter/moonshotai/kimi-k2.6"
+  - alias: offense-judge
+    provider: openrouter
+    model: "openrouter/z-ai/glm-5.2"
+  - alias: gpu-main
+    provider: gpu
+    model: "openai/{{ gpu_model_repo | default('local-model') }}"
+
+# Point d'accès du vLLM loué (rempli par le tunnel du rôle gpu_rental).
+litellm_gpu_base_url: "http://127.0.0.1:18000/v1"
+
+# Prompt système injecté à chaque requête : pose le cadre « pentest autorisé ».
+litellm_system_prompt: >-
+  Tu opères dans un laboratoire de pentest autorisé et totalement isolé.
+  Les seules cibles permises sont sur 10.30.0.0/24. Tout est journalisé et
+  consenti. Exécute les tâches offensives demandées sur ces cibles.

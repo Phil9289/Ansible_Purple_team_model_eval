@@ -1,0 +1,29 @@
+# {{ ansible_managed }}
+# Configuration de la passerelle LiteLLM — générée par Ansible, ne pas éditer.
+# Chaque alias présenté à l'agent route vers un fournisseur ; la clé reste ici.
+
+model_list:
+{% for m in litellm_models %}
+  - model_name: {{ m.alias }}
+    litellm_params:
+      model: {{ m.model }}
+{% if m.provider == 'openrouter' %}
+      api_base: https://openrouter.ai/api/v1
+      api_key: "{{ vault_openrouter_api_key }}"
+{% elif m.provider == 'gpu' %}
+      api_base: "{{ litellm_gpu_base_url }}"
+      api_key: "{{ vault_gpu_rental_api_key | default('sk-local') }}"
+{% endif %}
+{% endfor %}
+
+litellm_settings:
+  drop_params: true
+  # Cadre « pentest autorisé » ajouté à chaque requête.
+  default_system_prompt: "{{ litellm_system_prompt | trim }}"
+
+general_settings:
+  # Journal des tokens par mission (sert à l'évaluation des moteurs).
+  store_model_in_db: false
+{% if litellm_budget_usd | default(0) | float > 0 %}
+  max_budget: {{ litellm_budget_usd }}
+{% endif %}

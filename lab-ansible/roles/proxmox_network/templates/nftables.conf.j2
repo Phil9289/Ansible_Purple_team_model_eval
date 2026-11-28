@@ -45,6 +45,14 @@ table inet lab_filter {
         iifname "{{ lab_bridge }}" ip saddr {{ lab_network }} meta l4proto { tcp, udp } th dport { {{ lab_provisioning_ports | join(', ') }} } accept
 {% endif %}
 
+{% if llm_egress_enabled | default(false) | bool and llm_gateway_ip | default('') | length > 0 %}
+        # Passerelle LLM : SEULE cette IP sort, et seulement en DNS + HTTPS.
+        # Réseaux privés rejetés d'abord (le LAN maison reste fermé même en mode isolé).
+        iifname "{{ lab_bridge }}" ip saddr {{ llm_gateway_ip }} ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } reject
+        iifname "{{ lab_bridge }}" ip saddr {{ llm_gateway_ip }} udp dport 53 accept
+        iifname "{{ lab_bridge }}" ip saddr {{ llm_gateway_ip }} tcp dport 443 accept
+{% endif %}
+
         # Refus final : tout le reste qui sort du lab (IPv6 compris)
         iifname "{{ lab_bridge }}" limit rate 10/minute log prefix "LAB-REJECT-SORTIE "
         iifname "{{ lab_bridge }}" reject
@@ -59,6 +67,9 @@ table ip lab_nat {
         type nat hook postrouting priority srcnat; policy accept;
 {% if lab_mode == "provisioning" %}
         ip saddr {{ lab_network }} oifname != "{{ lab_bridge }}" masquerade
+{% elif llm_egress_enabled | default(false) | bool and llm_gateway_ip | default('') | length > 0 %}
+        # Mode isolé : seule la passerelle LLM est masquée vers Internet.
+        ip saddr {{ llm_gateway_ip }} oifname != "{{ lab_bridge }}" masquerade
 {% endif %}
     }
 }

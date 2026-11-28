@@ -1,0 +1,10 @@
+---
+# VM passerelle LLM (LiteLLM). Seule machine du labo autorisée à sortir vers
+# Internet, et seule détentrice des clés API. L'agent ne la joint qu'en interne.
+vmid: 310
+vcpu: 2
+ram_mb: 2048
+disk_gb: 20
+
+# Pas de GPU, pas d'outils offensifs : juste un routeur d'API OpenAI-compatible.
+litellm_port: 4000

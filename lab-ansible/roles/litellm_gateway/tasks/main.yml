@@ -1,0 +1,70 @@
+---
+# Déploie LiteLLM dans la VM passerelle, via Docker (image déjà construite).
+# Première installation : Internet requis (docker.io + image). Le profil doit
+# avoir ouvert la sortie de la passerelle (llm_egress != none).
+
+- name: Vérifier qu'une clé existe pour le routage demandé
+  ansible.builtin.assert:
+    that:
+      - (llm_route != 'openrouter') or (vault_openrouter_api_key | default('') | length > 0)
+      - (llm_route != 'gpu') or (vault_gpu_rental_api_key | default('') | length > 0)
+    fail_msg: >-
+      Le profil {{ llm_profile }} a besoin d'une clé absente du vault.
+      Ajoute-la avec « ansible-vault edit inventory/group_vars/all/vault.yml ».
+  no_log: true
+
+- name: Installer Docker (moteur des conteneurs de la passerelle)
+  ansible.builtin.apt:
+    name: [docker.io, docker-compose-v2]
+    state: present
+    update_cache: "{{ apt_update_cache | default(true) | bool }}"
+
+- name: S'assurer que Docker est démarré
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Créer le dossier de LiteLLM
+  ansible.builtin.file:
+    path: "{{ litellm_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Déposer le fichier de configuration de LiteLLM (routes + alias)
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ litellm_dir }}/config.yaml"
+    mode: "0640"
+  no_log: true          # le fichier contient les clés API
+  notify: Redémarrer LiteLLM
+
+- name: Déposer le docker-compose de LiteLLM
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ litellm_dir }}/docker-compose.yml"
+    mode: "0640"
+  notify: Redémarrer LiteLLM
+
+- name: Démarrer (ou mettre à jour) la passerelle LiteLLM
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ litellm_dir }}"
+  register: litellm_up
+  changed_when: "'Started' in litellm_up.stderr or 'Created' in litellm_up.stderr"
+
+- name: Attendre que la passerelle réponde
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ litellm_port }}/health/liveliness"
+    status_code: [200]
+  register: litellm_health
+  retries: 20
+  delay: 3
+  until: litellm_health.status == 200
+
+- name: Résumé de la passerelle
+  ansible.builtin.debug:
+    msg:
+      - "Passerelle LiteLLM sur {{ ansible_host | default(inventory_hostname) }}:{{ litellm_port }}"
+      - "Routage : {{ llm_route }} — alias exposés : {{ litellm_models | map(attribute='alias') | join(', ') }}"
+      - "Sortie Internet autorisée : {{ llm_egress }}"
